@@ -1,0 +1,82 @@
+ @import "tailwindcss";
+
+/* Theme: Tripzo brand colors and fonts */
+@theme {
+  --color-brand: #12326b;
+  --color-brand2: #1f5fbf;
+  --color-soft: #b9d3f2;
+  --color-page: #f4f8fd;
+  --color-accent: #f47c52;
+  --color-sun: #f4c96b;
+  --color-ink: #1b2638;
+  --color-muted: #6b7686;
+  --color-line: #dde5f0;
+
+  --font-sans: "Manrope", system-ui, sans-serif;
+  --font-display: "Plus Jakarta Sans", "Manrope", sans-serif;
+}
+
+/* Global defaults */
+@layer base {
+  html {
+    scroll-behavior: smooth;
+  }
+
+  body {
+    margin: 0;
+    min-width: 320px;
+    min-height: 100vh;
+    @apply bg-page text-ink font-sans antialiased;
+  }
+
+  #root {
+    min-height: 100vh;
+  }
+
+  h1,
+  h2,
+  h3,
+  .font-display {
+    font-family: var(--font-display);
+  }
+
+  button,
+  input,
+  select,
+  textarea {
+    font: inherit;
+  }
+
+  button:disabled {
+    cursor: not-allowed;
+    opacity: 0.5;
+  }
+
+  :focus-visible {
+    outline: 2px solid var(--color-brand2);
+    outline-offset: 3px;
+  }
+}
+
+/* Print: hide elements that should not appear on paper */
+@media print {
+
+  header,
+  .no-print {
+    display: none !important;
+  }
+}
+
+/* Accessibility: respect reduced-motion preferences */
+@media (prefers-reduced-motion: reduce) {
+
+  *,
+  *::before,
+  *::after {
+    scroll-behavior: auto !important;
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+}
+
