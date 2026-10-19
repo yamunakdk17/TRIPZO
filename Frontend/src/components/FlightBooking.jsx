@@ -1,279 +1,167 @@
 import React, { useMemo, useState } from "react";
 import {
-  Plane,
-  CalendarDays,
-  Users,
-  ArrowRightLeft,
-  ArrowLeft,
-  ArrowRight,
-  CheckCircle2,
-  Clock,
-  Luggage,
-  Wallet,
-  Ticket,
-  Search,
-  ShieldCheck,
-  RotateCcw,
+  Plane, CalendarDays, Users, ArrowRightLeft, ArrowLeft, ArrowRight,
+  CheckCircle2, Clock, Luggage, Wallet, Ticket, Search, RotateCcw,
+  CloudSun, ChevronLeft, ChevronRight, Loader2, CreditCard, Printer,
 } from "lucide-react";
 
-// --------------------------------------------------
-// SAMPLE FLIGHT DATA
-// Replace this array with data from your backend API.
-// --------------------------------------------------
-
-const INITIAL_FLIGHTS = [
-  {
-    id: "FL-101",
-    airline: "Buddha Air",
-    airlineCode: "BHA",
-    flightNo: "U4-603",
-    from: "Kathmandu (KTM)",
-    fromCode: "KTM",
-    to: "Pokhara (PKR)",
-    toCode: "PKR",
-    depTime: "08:15 AM",
-    arrTime: "08:40 AM",
-    duration: "25 min",
-    priceNpr: 5910,
-    priceUsd: 46,
-    carryOn: "5 kg",
-    checkIn: "25 kg",
-    seatsAvailable: 6,
-    refundable: true,
-  },
-  {
-    id: "FL-102",
-    airline: "Shree Airlines",
-    airlineCode: "SHA",
-    flightNo: "SHA-121",
-    from: "Kathmandu (KTM)",
-    fromCode: "KTM",
-    to: "Pokhara (PKR)",
-    toCode: "PKR",
-    depTime: "10:00 AM",
-    arrTime: "10:20 AM",
-    duration: "20 min",
-    priceNpr: 5800,
-    priceUsd: 45,
-    carryOn: "5 kg",
-    checkIn: "20 kg",
-    seatsAvailable: 9,
-    refundable: true,
-  },
-  {
-    id: "FL-103",
-    airline: "Yeti Airlines",
-    airlineCode: "NYT",
-    flightNo: "YT-671",
-    from: "Kathmandu (KTM)",
-    fromCode: "KTM",
-    to: "Pokhara (PKR)",
-    toCode: "PKR",
-    depTime: "01:15 PM",
-    arrTime: "01:40 PM",
-    duration: "25 min",
-    priceNpr: 6100,
-    priceUsd: 48,
-    carryOn: "5 kg",
-    checkIn: "20 kg",
-    seatsAvailable: 4,
-    refundable: false,
-  },
-  {
-    id: "FL-104",
-    airline: "Buddha Air",
-    airlineCode: "BHA",
-    flightNo: "U4-601",
-    from: "Kathmandu (KTM)",
-    fromCode: "KTM",
-    to: "Bhairahawa (BWA - Lumbini)",
-    toCode: "BWA",
-    depTime: "09:00 AM",
-    arrTime: "09:35 AM",
-    duration: "35 min",
-    priceNpr: 6200,
-    priceUsd: 49,
-    carryOn: "5 kg",
-    checkIn: "25 kg",
-    seatsAvailable: 8,
-    refundable: true,
-  },
-  {
-    id: "FL-105",
-    airline: "Yeti Airlines",
-    airlineCode: "NYT",
-    flightNo: "YT-201",
-    from: "Kathmandu (KTM)",
-    fromCode: "KTM",
-    to: "Bharatpur (BHR - Chitwan)",
-    toCode: "BHR",
-    depTime: "11:30 AM",
-    arrTime: "11:45 AM",
-    duration: "15 min",
-    priceNpr: 5500,
-    priceUsd: 43,
-    carryOn: "5 kg",
-    checkIn: "20 kg",
-    seatsAvailable: 5,
-    refundable: false,
-  },
-  {
-    id: "FL-106",
-    airline: "Summit Air",
-    airlineCode: "SMA",
-    flightNo: "SMA-101",
-    from: "Kathmandu (KTM)",
-    fromCode: "KTM",
-    to: "Lukla (LUA - Everest)",
-    toCode: "LUA",
-    depTime: "06:30 AM",
-    arrTime: "07:00 AM",
-    duration: "30 min",
-    priceNpr: 14500,
-    priceUsd: 110,
-    carryOn: "5 kg",
-    checkIn: "10 kg",
-    seatsAvailable: 4,
-    refundable: false,
-  },
-];
-
+/* ------------------------------------------------------------------
+   DATA  (replace buildFlights() with your backend API call later)
+------------------------------------------------------------------- */
+const RATE = 128; // NPR per USD
 const AIRPORTS = [
-  "Kathmandu (KTM)",
-  "Pokhara (PKR)",
-  "Lukla (LUA - Everest)",
-  "Bhairahawa (BWA - Lumbini)",
-  "Bharatpur (BHR - Chitwan)",
+  { code: "KTM", city: "Kathmandu" },
+  { code: "PKR", city: "Pokhara" },
+  { code: "BWA", city: "Bhairahawa (Lumbini)" },
+  { code: "BHR", city: "Bharatpur (Chitwan)" },
+  { code: "LUA", city: "Lukla (Everest)" },
 ];
+const airportLabel = (code) => {
+  const a = AIRPORTS.find((x) => x.code === code);
+  return a ? `${a.city} (${a.code})` : code;
+};
+const AIRLINE_CODES = { "Buddha Air": "BHA", "Yeti Airlines": "NYT", "Shree Airlines": "SHA", "Summit Air": "SMA" };
 
-const SEATS = [
-  "2A",
-  "2B",
-  "2C",
-  "3A",
-  "3B",
-  "3C",
-  "4A",
-  "4B",
-  "4C",
-];
-
-const INITIAL_PASSENGER = {
-  fullName: "",
-  email: "",
-  phone: "",
-  passport: "",
+// [airline, flightNo, departure, price NPR, checked kg, refundable, seats]
+const ROUTES = {
+  "KTM-PKR": { mins: 25, list: [
+    ["Shree Airlines", "SHA-121", "07:00", 5800, 20, true, 9],
+    ["Buddha Air", "U4-603", "08:15", 5910, 25, true, 6],
+    ["Yeti Airlines", "YT-671", "10:00", 5910, 20, false, 7],
+    ["Shree Airlines", "SHA-125", "11:30", 6735, 0, false, 5],
+    ["Buddha Air", "U4-607", "13:15", 6890, 25, true, 4],
+    ["Yeti Airlines", "YT-675", "15:00", 6906, 0, false, 8],
+    ["Shree Airlines", "SHA-129", "17:30", 7346, 20, true, 3],
+  ] },
+  "KTM-BWA": { mins: 35, list: [
+    ["Buddha Air", "U4-601", "09:00", 6200, 25, true, 8],
+    ["Yeti Airlines", "YT-301", "12:30", 6450, 20, false, 5],
+    ["Shree Airlines", "SHA-211", "16:00", 6700, 0, false, 6],
+  ] },
+  "KTM-BHR": { mins: 15, list: [
+    ["Yeti Airlines", "YT-201", "11:30", 5500, 20, false, 5],
+    ["Buddha Air", "U4-241", "14:00", 5700, 25, true, 7],
+  ] },
+  "KTM-LUA": { mins: 30, list: [
+    ["Summit Air", "SMA-101", "06:30", 14500, 10, false, 4],
+    ["Summit Air", "SMA-103", "07:15", 14900, 10, false, 6],
+  ] },
 };
 
-const formatPrice = (amount, currency) =>
-  currency === "NPR"
-    ? `NRs. ${amount.toLocaleString("en-IN")}`
-    : `$${amount.toLocaleString("en-US")}`;
+const toMin = (t) => Number(t.slice(0, 2)) * 60 + Number(t.slice(3));
+const toHHMM = (m) => `${String(Math.floor(m / 60) % 24).padStart(2, "0")}:${String(m % 60).padStart(2, "0")}`;
+const to12h = (t) => {
+  const h = Number(t.slice(0, 2));
+  return `${h % 12 || 12}:${t.slice(3)} ${h >= 12 ? "PM" : "AM"}`;
+};
 
-// --------------------------------------------------
-// REUSABLE COMPONENTS
-// --------------------------------------------------
+// Builds both directions of every route (e.g. KTM-PKR and PKR-KTM)
+function buildFlights() {
+  const out = [];
+  Object.entries(ROUTES).forEach(([key, r]) => {
+    const [a, b] = key.split("-");
+    [[a, b, false], [b, a, true]].forEach(([from, to, rev]) =>
+      r.list.forEach(([airline, no, dep, price, bag, refundable, seats], i) => {
+        const depT = rev ? toHHMM(toMin(dep) + 45 + i * 5) : dep;
+        out.push({
+          id: `${from}${to}-${no}${rev ? "R" : ""}`, airline, code: AIRLINE_CODES[airline],
+          no: rev ? no.replace(/(\d+)$/, (n) => String(Number(n) + 1)) : no,
+          from, to, dep: depT, arr: toHHMM(toMin(depT) + r.mins), mins: r.mins,
+          price, bag, refundable, seats,
+        });
+      })
+    );
+  });
+  return out;
+}
+const ALL_FLIGHTS = buildFlights();
 
-function SectionTitle({ eyebrow, title, description }) {
+/* ------------------------------------------------------------------
+   HELPERS
+------------------------------------------------------------------- */
+const todayISO = () => new Date().toLocaleDateString("en-CA");
+const addDays = (iso, n) => {
+  const d = new Date(`${iso}T00:00:00`);
+  d.setDate(d.getDate() + n);
+  return d.toLocaleDateString("en-CA");
+};
+const fmtDate = (iso, opt = { weekday: "short", day: "numeric", month: "short" }) =>
+  new Date(`${iso}T00:00:00`).toLocaleDateString("en-GB", opt);
+// Deterministic fare variation per date so the date strip shows real differences
+const dateFactor = (iso) => 1 + (((Number(iso.slice(8)) * 7) % 5) - 2) * 0.05;
+const farePrice = (flight, iso) => Math.round((flight.price * dateFactor(iso)) / 10) * 10;
+const money = (npr, cur) => (cur === "NPR" ? `NPR ${npr.toLocaleString("en-IN")}` : `$${Math.round(npr / RATE).toLocaleString("en-US")}`);
+const TAX_RATE = 0.08;
+const SEAT_COLS = ["A", "B", "C", "D"];
+const takenSeats = (flightId) =>
+  new Set(Array.from({ length: 12 }, (_, i) => {
+    const n = (flightId.length * 7 + i * 13) % 40;
+    return `${Math.floor(n / 4) + 1}${SEAT_COLS[n % 4]}`;
+  }));
+const emptyPax = () => ({ name: "", email: "", phone: "", doc: "", seat: "" });
+const input = "w-full rounded-xl border border-slate-200 bg-white p-3 text-sm outline-none focus:border-teal-600 focus:ring-2 focus:ring-teal-600/20";
+const STEPS = ["Flights", "Passengers", "Payment", "Ticket"];
+
+/* ------------------------------------------------------------------
+   SMALL COMPONENTS
+------------------------------------------------------------------- */
+function Stepper({ current }) {
   return (
-    <div className="mb-6">
-      <p className="text-xs font-bold uppercase tracking-widest text-teal-700">
-        {eyebrow}
-      </p>
-      <h2 className="mt-1 text-2xl font-black text-slate-900">
-        {title}
-      </h2>
-      {description && (
-        <p className="mt-2 text-sm text-slate-500">{description}</p>
-      )}
-    </div>
+    <ol className="mx-auto flex max-w-3xl items-center gap-2 px-4 py-5">
+      {STEPS.map((s, i) => (
+        <li key={s} className="flex flex-1 items-center gap-2">
+          <span className={`flex h-7 w-7 shrink-0 items-center justify-center rounded-full text-xs font-bold ${
+            i < current ? "bg-teal-700 text-white" : i === current ? "bg-[#13294B] text-white" : "bg-slate-200 text-slate-500"}`}>
+            {i < current ? <CheckCircle2 className="h-4 w-4" /> : i + 1}
+          </span>
+          <span className={`hidden text-sm font-semibold sm:block ${i === current ? "text-[#13294B]" : "text-slate-400"}`}>{s}</span>
+          {i < STEPS.length - 1 && <span className="h-px flex-1 bg-slate-300" />}
+        </li>
+      ))}
+    </ol>
   );
 }
 
-function FlightCard({ flight, currency, onBook }) {
-  const price = currency === "NPR" ? flight.priceNpr : flight.priceUsd;
-
+function FlightCard({ f, price, cur, onSelect }) {
+  const low = f.seats <= 4;
   return (
-    <article className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm transition hover:shadow-md">
-      <div className="flex flex-col gap-5 lg:flex-row lg:items-center lg:justify-between">
+    <article className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm transition hover:border-teal-300 hover:shadow-md">
+      <div className="grid items-center gap-5 lg:grid-cols-[1.1fr_1.6fr_1fr_auto]">
         <div className="flex items-center gap-3">
-          <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-xl bg-teal-50 font-black text-teal-800">
-            {flight.airlineCode}
-          </div>
+          <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-teal-50 text-sm font-black text-teal-800">{f.code}</div>
           <div>
-            <h3 className="font-bold text-slate-900">
-              {flight.airline}
-            </h3>
-            <p className="text-xs text-slate-500">
-              Flight {flight.flightNo}
-            </p>
-            <span
-              className={`mt-1 inline-block rounded-full px-2 py-1 text-[10px] font-bold ${
-                flight.refundable
-                  ? "bg-emerald-50 text-emerald-700"
-                  : "bg-amber-50 text-amber-700"
-              }`}
-            >
-              {flight.refundable ? "Refundable" : "Non-refundable"}
-            </span>
+            <h3 className="font-bold">{f.airline}</h3>
+            <p className="text-xs text-slate-500">{f.no}</p>
           </div>
         </div>
 
-        <div className="flex items-center justify-between gap-4 sm:justify-start">
-          <div>
-            <p className="text-xl font-black text-slate-900">
-              {flight.depTime}
-            </p>
-            <p className="text-xs font-bold text-slate-500">
-              {flight.fromCode}
-            </p>
-          </div>
-
-          <div className="flex min-w-20 flex-col items-center gap-1">
-            <span className="text-[10px] text-slate-500">
-              {flight.duration}
-            </span>
-            <div className="relative w-full border-t border-dashed border-teal-400">
+        <div className="flex items-center gap-4">
+          <div><p className="text-xl font-black">{to12h(f.dep)}</p><p className="text-xs font-semibold text-slate-500">{f.from}</p></div>
+          <div className="flex flex-1 flex-col items-center gap-1">
+            <span className="text-[11px] text-slate-500">{f.mins} min</span>
+            <div className="relative w-full border-t border-dashed border-teal-500">
               <Plane className="absolute -top-2.5 left-1/2 h-4 w-4 -translate-x-1/2 rotate-45 bg-white text-teal-700" />
             </div>
-            <span className="text-[10px] font-semibold text-emerald-700">
-              Non-stop
-            </span>
+            <span className="text-[11px] font-semibold text-emerald-700">Non-stop</span>
           </div>
-
-          <div>
-            <p className="text-xl font-black text-slate-900">
-              {flight.arrTime}
-            </p>
-            <p className="text-xs font-bold text-slate-500">
-              {flight.toCode}
-            </p>
-          </div>
+          <div className="text-right"><p className="text-xl font-black">{to12h(f.arr)}</p><p className="text-xs font-semibold text-slate-500">{f.to}</p></div>
         </div>
 
-        <div className="text-xs leading-6 text-slate-500">
-          <p className="flex items-center gap-2">
-            <Luggage className="h-4 w-4" />
-            Carry-on: {flight.carryOn}
-          </p>
-          <p>Checked: {flight.checkIn}</p>
-          <p>{flight.seatsAvailable} seats listed available</p>
-        </div>
+        <ul className="space-y-1 text-xs text-slate-600">
+          <li className="flex items-center gap-2"><Luggage className="h-4 w-4 text-slate-400" />
+            {f.bag ? `${f.bag} kg checked + 5 kg cabin` : "Cabin bag only (5 kg)"}</li>
+          <li>{f.refundable ? <span className="font-semibold text-emerald-700">Refundable</span> : <span className="font-semibold text-amber-700">Non-refundable</span>}</li>
+          <li className={low ? "font-semibold text-red-600" : ""}>{low ? `Only ${f.seats} seats left` : `${f.seats} seats left`}</li>
+        </ul>
 
         <div className="flex items-center justify-between gap-4 border-t border-slate-100 pt-4 lg:flex-col lg:items-end lg:border-0 lg:pt-0">
-          <div>
-            <p className="text-xs text-slate-500">Price per passenger</p>
-            <p className="text-2xl font-black text-teal-700">
-              {formatPrice(price, currency)}
-            </p>
+          <div className="lg:text-right">
+            <p className="text-xs text-slate-500">per adult</p>
+            <p className="text-2xl font-black text-teal-700">{money(price, cur)}</p>
           </div>
-
-          <button
-            type="button"
-            onClick={() => onBook(flight)}
-            className="rounded-xl bg-teal-700 px-5 py-3 text-sm font-bold text-white transition hover:bg-teal-800"
-          >
-            Select flight <ArrowRight className="ml-1 inline h-4 w-4" />
+          <button type="button" onClick={() => onSelect(f)}
+            className="rounded-xl bg-teal-700 px-5 py-3 text-sm font-bold text-white transition hover:bg-teal-800 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-teal-700">
+            Select <ArrowRight className="ml-1 inline h-4 w-4" />
           </button>
         </div>
       </div>
@@ -281,1174 +169,507 @@ function FlightCard({ flight, currency, onBook }) {
   );
 }
 
-// --------------------------------------------------
-// MAIN FLIGHT BOOKING COMPONENT
-// --------------------------------------------------
-
-export default function TripzoFlightBooking() {
-  const [currency, setCurrency] = useState("NPR");
-  const [step, setStep] = useState("SEARCH");
-
-  const [fromCity, setFromCity] = useState("Kathmandu (KTM)");
-  const [toCity, setToCity] = useState("Pokhara (PKR)");
-  const [departDate, setDepartDate] = useState("2026-10-31");
-  const [paxCount, setPaxCount] = useState(1);
-
-  const [selectedFlight, setSelectedFlight] = useState(null);
-  const [selectedSeat, setSelectedSeat] = useState("3A");
-  const [passenger, setPassenger] = useState(INITIAL_PASSENGER);
-  const [issuedTicket, setIssuedTicket] = useState(null);
-  const [searchSubmitted, setSearchSubmitted] = useState(false);
-  const [paymentMessage, setPaymentMessage] = useState("");
-  const [selectedDate, setSelectedDate] = useState("2026-10-31");
-  const [airlineFilter, setAirlineFilter] = useState("All Airlines");
-  const [luggageFilter, setLuggageFilter] = useState("Any");
-  const [departureFilter, setDepartureFilter] = useState("Any time");
-  const [sortBy, setSortBy] = useState("cheapest");
-
-  const availableFlights = useMemo(
-    () =>
-      INITIAL_FLIGHTS.filter(
-        (flight) =>
-          flight.from === fromCity && flight.to === toCity
-      ).sort((a, b) => {
-        const priceA = currency === "NPR" ? a.priceNpr : a.priceUsd;
-        const priceB = currency === "NPR" ? b.priceNpr : b.priceUsd;
-        return priceA - priceB;
-      }),
-    [fromCity, toCity, currency]
+function SeatMap({ flightId, pax, active, onPick }) {
+  const taken = useMemo(() => takenSeats(flightId), [flightId]);
+  const mine = pax.map((p) => p.seat);
+  return (
+    <div className="mx-auto w-fit rounded-3xl border border-slate-200 bg-slate-50 p-4">
+      <div className="mb-2 grid grid-cols-[1.5rem_repeat(2,2.5rem)_1rem_repeat(2,2.5rem)] gap-1.5 text-center text-xs font-semibold text-slate-400">
+        <span /> <span>A</span><span>B</span><span /><span>C</span><span>D</span>
+      </div>
+      {Array.from({ length: 10 }, (_, r) => r + 1).map((row) => (
+        <div key={row} className="mb-1.5 grid grid-cols-[1.5rem_repeat(2,2.5rem)_1rem_repeat(2,2.5rem)] items-center gap-1.5">
+          <span className="text-xs text-slate-400">{row}</span>
+          {SEAT_COLS.flatMap((c, i) => {
+            const id = `${row}${c}`;
+            const isTaken = taken.has(id);
+            const owner = mine.indexOf(id);
+            const btn = (
+              <button key={id} type="button" disabled={isTaken || (owner >= 0 && owner !== active)}
+                aria-label={`Seat ${id}${isTaken ? " taken" : ""}`}
+                onClick={() => onPick(id)}
+                className={`h-10 rounded-lg text-[11px] font-bold transition ${
+                  isTaken ? "cursor-not-allowed bg-slate-200 text-slate-400"
+                  : owner === active ? "bg-teal-700 text-white"
+                  : owner >= 0 ? "bg-[#13294B] text-white"
+                  : "border border-slate-300 bg-white hover:border-teal-600"}`}>
+                {owner >= 0 ? `P${owner + 1}` : isTaken ? "×" : c}
+              </button>
+            );
+            return i === 1 ? [btn, <span key={`${row}gap`} />] : [btn];
+          })}
+        </div>
+      ))}
+    </div>
   );
+}
 
-  const unitPrice = selectedFlight
-    ? currency === "NPR"
-      ? selectedFlight.priceNpr
-      : selectedFlight.priceUsd
-    : 0;
+/* ------------------------------------------------------------------
+   MAIN
+------------------------------------------------------------------- */
+export default function TripzoFlightBooking() {
+  const [cur, setCur] = useState("NPR");
+  const [step, setStep] = useState("SEARCH");
+  const [from, setFrom] = useState("KTM");
+  const [to, setTo] = useState("PKR");
+  const [date, setDate] = useState(addDays(todayISO(), 7));
+  const [paxCount, setPaxCount] = useState(1);
+  const [flight, setFlight] = useState(null);
+  const [pax, setPax] = useState([emptyPax()]);
+  const [active, setActive] = useState(0);
+  const [method, setMethod] = useState("Khalti");
+  const [paying, setPaying] = useState(false);
+  const [ticket, setTicket] = useState(null);
+  const [filters, setFilters] = useState({ airline: "All", time: "Any", refundable: false, bag: false });
+  const [sort, setSort] = useState("cheapest");
+  const [error, setError] = useState("");
 
-  const totalAmount = unitPrice * paxCount;
+  const scrollTop = () => window.scrollTo({ top: 0, behavior: "smooth" });
+  const go = (s) => { setStep(s); setError(""); scrollTop(); };
 
-  const scrollTop = () =>
-    window.scrollTo({ top: 0, behavior: "smooth" });
+  const routeFlights = useMemo(() => ALL_FLIGHTS.filter((f) => f.from === from && f.to === to), [from, to]);
+  const airlinesOnRoute = useMemo(() => ["All", ...new Set(routeFlights.map((f) => f.airline))], [routeFlights]);
 
-  const handleSearch = (event) => {
-    event.preventDefault();
+  const results = useMemo(() => {
+    const slot = (t) => { const h = Number(t.slice(0, 2)); return h < 12 ? "Morning" : h < 17 ? "Afternoon" : "Evening"; };
+    return routeFlights
+      .filter((f) => filters.airline === "All" || f.airline === filters.airline)
+      .filter((f) => filters.time === "Any" || slot(f.dep) === filters.time)
+      .filter((f) => !filters.refundable || f.refundable)
+      .filter((f) => !filters.bag || f.bag > 0)
+      .sort((a, b) =>
+        sort === "cheapest" ? farePrice(a, date) - farePrice(b, date)
+        : sort === "earliest" ? toMin(a.dep) - toMin(b.dep)
+        : a.mins - b.mins);
+  }, [routeFlights, filters, sort, date]);
 
-    if (fromCity === toCity) {
-      window.alert("Departure and destination must be different.");
-      return;
-    }
+  const lowestFare = routeFlights.length ? Math.min(...routeFlights.map((f) => farePrice(f, date))) : 0;
 
-    if (!departDate) {
-      window.alert("Please select a departure date.");
-      return;
-    }
+  // Date strip: 7 days around the chosen date, never in the past
+  const strip = useMemo(() => {
+    const start = [addDays(date, -3), todayISO()].sort().pop();
+    return Array.from({ length: 7 }, (_, i) => addDays(start, i));
+  }, [date]);
 
-    setSearchSubmitted(true);
-    setStep("RESULTS");
-    scrollTop();
+  const unit = flight ? farePrice(flight, date) : 0;
+  const base = unit * paxCount;
+  const taxes = Math.round(base * TAX_RATE);
+  const total = base + taxes;
+
+  /* ---------- handlers ---------- */
+  const search = (e) => {
+    e.preventDefault();
+    if (from === to) return setError("Departure and destination must be different.");
+    if (!routeFlights.length) return setError("No direct flights on this route yet. Try a route to or from Kathmandu.");
+    setFilters({ airline: "All", time: "Any", refundable: false, bag: false });
+    go("RESULTS");
+  };
+  const swap = () => { setFrom(to); setTo(from); };
+  const choose = (f) => {
+    setFlight(f);
+    setPax(Array.from({ length: paxCount }, emptyPax));
+    setActive(0);
+    go("CHECKOUT");
+  };
+  const updatePax = (i, key, value) => setPax((p) => p.map((x, idx) => (idx === i ? { ...x, [key]: value } : x)));
+  const pickSeat = (id) => updatePax(active, "seat", pax[active].seat === id ? "" : id);
+
+  const toPayment = (e) => {
+    e.preventDefault();
+    if (pax.some((p) => !p.seat)) return setError("Choose a seat for every passenger.");
+    go("PAYMENT");
   };
 
-  const handleSwapAirports = () => {
-    setFromCity(toCity);
-    setToCity(fromCity);
+  // DEMO ONLY: replace with a real call to your backend / Khalti / eSewa verification.
+  const pay = () => {
+    setPaying(true);
+    setTimeout(() => {
+      setTicket({
+        pnr: `TPZ${Math.floor(100000 + Math.random() * 900000)}`,
+        flight, pax: pax.map((p) => ({ ...p })), date, total, cur, method,
+        issued: new Date().toLocaleString("en-GB"),
+      });
+      setPaying(false);
+      go("TICKET");
+    }, 1600);
   };
+  const reset = () => { setFlight(null); setTicket(null); setPaying(false); go("SEARCH"); };
 
-  const handleBookFlight = (flight) => {
-    setSelectedFlight(flight);
-    setSelectedSeat("3A");
-    setPassenger(INITIAL_PASSENGER);
-    setPaymentMessage("");
-    setStep("CHECKOUT");
-    scrollTop();
-  };
+  const stepIndex = { RESULTS: 0, CHECKOUT: 1, PAYMENT: 2, TICKET: 3 }[step];
 
-  const handlePassengerChange = (event) => {
-    const { name, value } = event.target;
-
-    setPassenger((previous) => ({
-      ...previous,
-      [name]: value,
-    }));
-  };
-
-  const handleProceedToPayment = (event) => {
-    event.preventDefault();
-
-    if (!selectedFlight) return;
-
-    setPaymentMessage("");
-    setStep("KHALTI_PAY");
-    scrollTop();
-  };
-
-  // DEMO ONLY: This does not contact Khalti or verify payment.
-  const handleDemoPayment = () => {
-    if (!selectedFlight) return;
-
-    const ticket = {
-      pnr: `TPZ-${Math.floor(100000 + Math.random() * 900000)}`,
-      flight: selectedFlight,
-      passenger: { ...passenger },
-      seat: selectedSeat,
-      passengerCount: paxCount,
-      totalAmount,
-      currency,
-      issuedDate: new Date().toLocaleDateString(),
-      departureDate: departDate,
-    };
-
-    setIssuedTicket(ticket);
-    setStep("ETICKET");
-    scrollTop();
-  };
-
-  const resetBooking = () => {
-    setSelectedFlight(null);
-    setSelectedSeat("3A");
-    setPassenger(INITIAL_PASSENGER);
-    setIssuedTicket(null);
-    setPaymentMessage("");
-    setSearchSubmitted(false);
-    setStep("SEARCH");
-    scrollTop();
-  };
-  const domesticFares = [
-    {
-      id: 1,
-      airline: "SHREE AIRLINES",
-      price: 5800,
-      time: "07:00 AM",
-      luggage: "Included",
-    },
-    {
-      id: 2,
-      airline: "BUDDHA AIR",
-      price: 5910,
-      time: "08:30 AM",
-      luggage: "Included",
-    },
-    {
-      id: 3,
-      airline: "YETI AIRLINES",
-      price: 5910,
-      time: "10:00 AM",
-      luggage: "Included",
-    },
-    {
-      id: 4,
-      airline: "SHREE AIRLINES",
-      price: 6735,
-      time: "11:30 AM",
-      luggage: "Not included",
-    },
-    {
-      id: 5,
-      airline: "SHREE AIRLINES",
-      price: 6890,
-      time: "01:00 PM",
-      luggage: "Included",
-    },
-    {
-      id: 6,
-      airline: "YETI AIRLINES",
-      price: 6906,
-      time: "03:00 PM",
-      luggage: "Not included",
-    },
-    {
-      id: 7,
-      airline: "SHREE AIRLINES",
-      price: 7346,
-      time: "04:30 PM",
-      luggage: "Included",
-    },
-    {
-      id: 8,
-      airline: "SHREE AIRLINES",
-      price: 7802,
-      time: "06:00 PM",
-      luggage: "Included",
-    },
-  ];
-
-  const filteredFares = domesticFares
-    .filter(
-      (fare) =>
-        airlineFilter === "All Airlines" || fare.airline === airlineFilter,
-    )
-    .filter((fare) => luggageFilter === "Any" || fare.luggage === luggageFilter)
-    .filter((fare) => {
-      if (departureFilter === "Any time") return true;
-
-      const hour =
-        Number(fare.time.split(":")[0]) +
-        (fare.time.includes("PM") && fare.time.startsWith("12") === false
-          ? 12
-          : 0);
-
-      if (departureFilter === "Morning") return hour < 12;
-      if (departureFilter === "Afternoon") return hour >= 12 && hour < 17;
-      if (departureFilter === "Evening") return hour >= 17;
-      return true;
-    })
-    .sort((a, b) => (sortBy === "cheapest" ? a.price - b.price : 0));
-
-  const fareCalendar = [
-    { day: 18, price: 7802 },
-    { day: 19, price: 5800 },
-    { day: 20, price: 6517 },
-    { day: 21, price: 14856 },
-    { day: 22, price: 5800 },
-    { day: 23, price: 5800 },
-    { day: 24, price: 5800 },
-  ];
-
+  /* ---------- render ---------- */
   return (
     <div className="min-h-screen bg-[#F4F6EF] font-sans text-[#13294B]">
-      {/* NAVIGATION */}
-      <header className="sticky top-0 z-40 bg-[#13294B] text-white shadow-md">
-        <div className="mx-auto flex max-w-7xl flex-wrap items-center justify-between gap-4 px-4 py-4">
-          <button
-            type="button"
-            onClick={resetBooking}
-            className="flex items-center gap-3 text-left"
-          >
-            <span className="flex items-center gap-2 rounded-xl bg-teal-700 px-3 py-2 text-xl font-black tracking-wide">
-              <Plane className="h-5 w-5 -rotate-45" />
-              TRIPZO
+      <style>{`@media print{header,footer,.no-print{display:none!important}body{background:#fff}}`}</style>
+
+      <header className="no-print sticky top-0 z-40 bg-[#13294B] text-white shadow-md">
+        <div className="mx-auto flex max-w-7xl items-center justify-between gap-4 px-4 py-3">
+          <button type="button" onClick={reset} className="flex items-center gap-3 text-left">
+            <span className="flex items-center gap-2 rounded-xl bg-teal-700 px-3 py-2 text-lg font-black tracking-wide">
+              <Plane className="h-5 w-5 -rotate-45" /> Tripzo
             </span>
-            <span>
-              <span className="block text-sm font-black">
-                NEPAL TRAVEL PORTAL
-              </span>
-              <span className="text-[10px] text-teal-300">
-                DISCOVER MORE. TRAVEL BETTER.
-              </span>
+            <span className="hidden sm:block">
+              <span className="block text-sm font-black">Nepal flights</span>
+              <span className="text-[11px] text-teal-300">Discover more. Travel better.</span>
             </span>
           </button>
-
-          <div className="flex items-center gap-2 rounded-xl bg-white/10 p-1">
-            {["NPR", "USD"].map((item) => (
-              <button
-                key={item}
-                type="button"
-                onClick={() => setCurrency(item)}
-                className={`rounded-lg px-4 py-2 text-xs font-bold ${
-                  currency === item
-                    ? "bg-teal-600 text-white"
-                    : "text-white/70 hover:text-white"
-                }`}
-              >
-                {item === "NPR" ? "🇳🇵 NPR" : "🌐 USD"}
-              </button>
+          <div className="flex gap-1 rounded-xl bg-white/10 p-1">
+            {["NPR", "USD"].map((c) => (
+              <button key={c} type="button" onClick={() => setCur(c)} aria-pressed={cur === c}
+                className={`rounded-lg px-4 py-2 text-xs font-bold ${cur === c ? "bg-teal-600" : "text-white/70 hover:text-white"}`}>{c}</button>
             ))}
           </div>
         </div>
       </header>
-      {/* SEARCH PAGE */}
+
+      {stepIndex !== undefined && <div className="no-print"><Stepper current={stepIndex} /></div>}
+
+      {/* ============ SEARCH ============ */}
       {step === "SEARCH" && (
         <>
           <section className="relative overflow-hidden bg-[#13294B] px-4 py-16 text-white sm:py-24">
-            <div
-              className="absolute inset-0 bg-cover bg-center opacity-25"
-              style={{
-                backgroundImage:
-                  "url(https://images.unsplash.com/photo-1544735716-392fe2489ffa?auto=format&fit=crop&w=1920&q=80)",
-              }}
-            />
-
+            <div className="absolute inset-0 bg-cover bg-center opacity-25"
+              style={{ backgroundImage: "url(https://images.unsplash.com/photo-1544735716-392fe2489ffa?auto=format&fit=crop&w=1920&q=80)" }} />
             <div className="relative mx-auto max-w-7xl">
-              <span className="inline-flex items-center gap-2 rounded-full border border-teal-300/30 bg-teal-500/20 px-4 py-2 text-xs font-bold text-teal-100">
-                <Plane className="h-4 w-4" />
-                YOUR JOURNEY STARTS HERE
-              </span>
-
-              <h1 className="mt-6 max-w-3xl text-4xl font-black leading-tight sm:text-6xl">
-                Explore Nepal.
-                <span className="block text-teal-300">
-                  Find your next flight.
-                </span>
+              <h1 className="max-w-3xl text-4xl font-black leading-tight sm:text-6xl">
+                Fly across Nepal in minutes, not hours.
               </h1>
-
               <p className="mt-4 max-w-xl text-sm leading-7 text-white/75 sm:text-base">
-                Explore domestic routes and manage your booking in one place.
+                Compare domestic airlines, pick your seat and get your e-ticket in one place.
               </p>
 
-              <form
-                onSubmit={handleSearch}
-                className="mt-10 rounded-2xl bg-white p-5 text-[#13294B] shadow-2xl sm:p-7"
-              >
-                <div className="mb-5 flex items-center gap-2 font-black">
-                  <Search className="h-5 w-5 text-teal-700" />
-                  Search domestic flights
-                </div>
-
-                <div className="grid grid-cols-1 items-end gap-4 md:grid-cols-12">
-                  <div className="md:col-span-4">
-                    <label
-                      htmlFor="fromCity"
-                      className="mb-2 block text-xs font-bold text-slate-500"
-                    >
-                      FROM
-                    </label>
-                    <select
-                      id="fromCity"
-                      value={fromCity}
-                      onChange={(event) => setFromCity(event.target.value)}
-                      className="w-full rounded-xl border border-slate-200 bg-[#F4F6EF] p-4 text-sm font-bold outline-none focus:border-teal-600"
-                    >
-                      {AIRPORTS.map((airport) => (
-                        <option key={airport} value={airport}>
-                          {airport}
-                        </option>
-                      ))}
+              <form onSubmit={search} className="mt-10 rounded-2xl bg-white p-5 text-[#13294B] shadow-2xl sm:p-7">
+                <div className="grid items-end gap-4 md:grid-cols-12">
+                  <div className="md:col-span-3">
+                    <label htmlFor="from" className="mb-2 block text-xs font-bold text-slate-500">From</label>
+                    <select id="from" value={from} onChange={(e) => setFrom(e.target.value)} className={input}>
+                      {AIRPORTS.map((a) => <option key={a.code} value={a.code}>{airportLabel(a.code)}</option>)}
                     </select>
                   </div>
-
                   <div className="flex justify-center md:col-span-1">
-                    <button
-                      type="button"
-                      onClick={handleSwapAirports}
-                      aria-label="Swap departure and destination"
-                      className="rounded-full border border-slate-200 p-3 text-teal-700 transition hover:bg-teal-50"
-                    >
+                    <button type="button" onClick={swap} aria-label="Swap airports"
+                      className="rounded-full border border-slate-200 p-3 text-teal-700 transition hover:bg-teal-50">
                       <ArrowRightLeft className="h-5 w-5" />
                     </button>
                   </div>
-
                   <div className="md:col-span-3">
-                    <label
-                      htmlFor="toCity"
-                      className="mb-2 block text-xs font-bold text-slate-500"
-                    >
-                      TO
-                    </label>
-                    <select
-                      id="toCity"
-                      value={toCity}
-                      onChange={(event) => setToCity(event.target.value)}
-                      className="w-full rounded-xl border border-slate-200 bg-[#F4F6EF] p-4 text-sm font-bold outline-none focus:border-teal-600"
-                    >
-                      {AIRPORTS.map((airport) => (
-                        <option key={airport} value={airport}>
-                          {airport}
-                        </option>
-                      ))}
+                    <label htmlFor="to" className="mb-2 block text-xs font-bold text-slate-500">To</label>
+                    <select id="to" value={to} onChange={(e) => setTo(e.target.value)} className={input}>
+                      {AIRPORTS.map((a) => <option key={a.code} value={a.code}>{airportLabel(a.code)}</option>)}
                     </select>
                   </div>
-
-                  <div className="md:col-span-2">
-                    <label
-                      htmlFor="departDate"
-                      className="mb-2 block text-xs font-bold text-slate-500"
-                    >
-                      DEPARTURE
-                    </label>
-                    <input
-                      id="departDate"
-                      type="date"
-                      min={new Date().toLocaleDateString("en-CA")}
-                      value={departDate}
-                      onChange={(event) => setDepartDate(event.target.value)}
-                      required
-                      className="w-full rounded-xl border border-slate-200 bg-[#F4F6EF] p-4 text-sm font-bold outline-none focus:border-teal-600"
-                    />
-                  </div>
-
                   <div className="md:col-span-3">
-                    <label
-                      htmlFor="paxCount"
-                      className="mb-2 block text-xs font-bold text-slate-500"
-                    >
-                      PASSENGERS
-                    </label>
-                    <div className="flex items-center gap-3 rounded-xl border border-slate-200 bg-[#F4F6EF] p-3">
+                    <label htmlFor="date" className="mb-2 block text-xs font-bold text-slate-500">Departure date</label>
+                    <input id="date" type="date" min={todayISO()} value={date} required
+                      onChange={(e) => setDate(e.target.value)} className={input} />
+                  </div>
+                  <div className="md:col-span-2">
+                    <label htmlFor="pax" className="mb-2 block text-xs font-bold text-slate-500">Passengers</label>
+                    <div className="flex items-center gap-2 rounded-xl border border-slate-200 bg-white p-3">
                       <Users className="h-5 w-5 text-teal-700" />
-                      <select
-                        id="paxCount"
-                        value={paxCount}
-                        onChange={(event) =>
-                          setPaxCount(Number(event.target.value))
-                        }
-                        className="w-full bg-transparent text-sm font-bold outline-none"
-                      >
-                        {[1, 2, 3, 4, 5, 6].map((count) => (
-                          <option key={count} value={count}>
-                            {count} {count === 1 ? "Adult" : "Adults"}
-                          </option>
-                        ))}
+                      <select id="pax" value={paxCount} onChange={(e) => setPaxCount(Number(e.target.value))}
+                        className="w-full bg-transparent text-sm outline-none">
+                        {[1, 2, 3, 4, 5, 6].map((n) => <option key={n} value={n}>{n} {n === 1 ? "adult" : "adults"}</option>)}
                       </select>
                     </div>
                   </div>
-
-                  <div className="md:col-span-9">
-                    <button
-                      type="submit"
-                      className="flex w-full items-center justify-center gap-2 rounded-xl bg-teal-700 p-4 font-black text-white transition hover:bg-teal-800"
-                    >
-                      <Search className="h-5 w-5" />
-                      Search flights
+                  <div className="md:col-span-12">
+                    <button type="submit"
+                      className="flex w-full items-center justify-center gap-2 rounded-xl bg-teal-700 p-4 font-black text-white transition hover:bg-teal-800">
+                      <Search className="h-5 w-5" /> Search flights
                     </button>
                   </div>
                 </div>
+                {error && <p role="alert" className="mt-3 text-sm font-semibold text-red-600">{error}</p>}
               </form>
             </div>
           </section>
 
-          {/* POPULAR DESTINATIONS */}
           <section className="mx-auto max-w-7xl px-4 py-14">
-            <SectionTitle
-              eyebrow="Explore Nepal"
-              title="Popular flight routes"
-              description="Choose a destination to start searching."
-            />
-
-            <div className="grid gap-5 md:grid-cols-3">
-              {[
-                {
-                  destination: "Pokhara (PKR)",
-                  title: "Kathmandu to Pokhara",
-                  duration: "20–25 min",
-                  price: 5800,
-                },
-                {
-                  destination: "Lukla (LUA - Everest)",
-                  title: "Kathmandu to Lukla",
-                  duration: "30 min",
-                  price: 14500,
-                },
-                {
-                  destination: "Bhairahawa (BWA - Lumbini)",
-                  title: "Kathmandu to Bhairahawa",
-                  duration: "35 min",
-                  price: 6200,
-                },
-              ].map((route) => (
-                <button
-                  type="button"
-                  key={route.destination}
-                  onClick={() => {
-                    setFromCity("Kathmandu (KTM)");
-                    setToCity(route.destination);
-                    setStep("SEARCH");
-                    scrollTop();
-                  }}
-                  className="rounded-2xl border border-slate-200 bg-white p-6 text-left shadow-sm transition hover:-translate-y-1 hover:shadow-md"
-                >
-                  <div className="mb-4 flex items-center justify-between">
-                    <span className="rounded-lg bg-teal-50 px-3 py-2 text-xs font-bold text-teal-800">
-                      <Clock className="mr-1 inline h-3.5 w-3.5" />
-                      {route.duration}
-                    </span>
-                    <Plane className="h-5 w-5 text-teal-700" />
-                  </div>
-                  <h3 className="font-black">{route.title}</h3>
-                  <p className="mt-2 text-sm text-slate-500">
-                    From {formatPrice(route.price, currency)}
-                  </p>
-                  <span className="mt-4 inline-flex items-center text-sm font-bold text-teal-700">
-                    Search route <ArrowRight className="ml-1 h-4 w-4" />
-                  </span>
-                </button>
-              ))}
+            <h2 className="text-2xl font-black">Popular routes from Kathmandu</h2>
+            <p className="mt-1 text-sm text-slate-500">Tap a route to fill in the search.</p>
+            <div className="mt-6 grid gap-5 md:grid-cols-3">
+              {["PKR", "LUA", "BWA"].map((code) => {
+                const r = ROUTES[`KTM-${code}`];
+                const min = Math.min(...r.list.map((x) => x[3]));
+                return (
+                  <button key={code} type="button" onClick={() => { setFrom("KTM"); setTo(code); scrollTop(); }}
+                    className="rounded-2xl border border-slate-200 bg-white p-6 text-left shadow-sm transition hover:-translate-y-1 hover:shadow-md">
+                    <div className="mb-4 flex items-center justify-between">
+                      <span className="rounded-lg bg-teal-50 px-3 py-2 text-xs font-bold text-teal-800">
+                        <Clock className="mr-1 inline h-3.5 w-3.5" />{r.mins} min
+                      </span>
+                      <Plane className="h-5 w-5 text-teal-700" />
+                    </div>
+                    <h3 className="font-black">Kathmandu to {airportLabel(code).split(" (")[0]}</h3>
+                    <p className="mt-2 text-sm text-slate-500">From {money(min, cur)}</p>
+                  </button>
+                );
+              })}
             </div>
           </section>
         </>
       )}
-      {/* SEARCH RESULTS */}
-      
+
+      {/* ============ RESULTS ============ */}
       {step === "RESULTS" && (
-        <div className="min-h-screen bg-slate-50 text-slate-900">
-          {/* Selected Route Header */}
-          <div className="bg-white border-b border-slate-200">
-            <div className="max-w-7xl mx-auto px-4 py-5">
-              <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
-                <div>
-                  <p className="text-xs font-bold tracking-[0.2em] text-indigo-600">
-                    SELECTED ROUTE
-                  </p>
+        <main className="mx-auto max-w-7xl px-4 pb-10">
+          <div className="flex flex-wrap items-center justify-between gap-4 rounded-2xl bg-white p-5 shadow-sm">
+            <div>
+              <h2 className="text-xl font-black">{airportLabel(from)} to {airportLabel(to)}</h2>
+              <p className="mt-1 text-sm text-slate-500">
+                {fmtDate(date, { weekday: "long", day: "numeric", month: "long", year: "numeric" })} · {paxCount} {paxCount === 1 ? "adult" : "adults"}
+              </p>
+            </div>
+            <button type="button" onClick={() => go("SEARCH")}
+              className="rounded-xl border border-slate-300 px-5 py-3 text-sm font-bold hover:bg-slate-100">Change search</button>
+          </div>
 
-                  <h2 className="mt-2 text-2xl font-black">
-                    ONE WAY : {fromCity} - {toCity}
-                  </h2>
-
-                  <p className="mt-2 text-sm text-slate-500">
-                    » SAT, OCT 31, 2026 | {paxCount} ADULT
-                    {paxCount > 1 ? "S" : ""}
-                  </p>
-                </div>
-
-                <button
-                  type="button"
-                  onClick={() => setStage("SEARCH")}
-                  className="rounded-xl border border-slate-300 bg-white px-5 py-3 text-sm font-bold hover:bg-slate-100"
-                >
-                  Modify Search
+          {/* date strip */}
+          <div className="mt-4 flex items-stretch gap-2 overflow-x-auto pb-1">
+            <button type="button" aria-label="Previous day" disabled={date <= todayISO()} onClick={() => setDate(addDays(date, -1))}
+              className="rounded-xl bg-white px-3 shadow-sm disabled:opacity-40"><ChevronLeft className="h-5 w-5" /></button>
+            {strip.map((d) => {
+              const cheapest = routeFlights.length ? Math.min(...routeFlights.map((f) => farePrice(f, d))) : 0;
+              return (
+                <button key={d} type="button" onClick={() => setDate(d)} aria-pressed={d === date}
+                  className={`min-w-[5.5rem] flex-1 rounded-xl px-3 py-2 text-center shadow-sm transition ${d === date ? "bg-teal-700 text-white" : "bg-white hover:bg-teal-50"}`}>
+                  <span className="block text-xs">{fmtDate(d)}</span>
+                  <span className={`block text-sm font-black ${d !== date && cheapest === lowestFare ? "text-emerald-700" : ""}`}>{money(cheapest, cur)}</span>
                 </button>
-              </div>
+              );
+            })}
+            <button type="button" aria-label="Next day" onClick={() => setDate(addDays(date, 1))}
+              className="rounded-xl bg-white px-3 shadow-sm"><ChevronRight className="h-5 w-5" /></button>
+          </div>
 
-              {/* Date navigation */}
-              <div className="mt-6 flex items-center justify-between gap-3">
-                <button
-                  type="button"
-                  onClick={() => setSelectedDate("2026-10-30")}
-                  className={`rounded-xl px-4 py-3 text-sm font-bold ${
-                    selectedDate === "2026-10-30"
-                      ? "bg-indigo-600 text-white"
-                      : "bg-slate-100 text-slate-700"
-                  }`}
-                >
-                  OCT 30, 2026
-                </button>
+          {to === "LUA" && (
+            <p className="mt-4 flex items-start gap-2 rounded-xl border border-sky-200 bg-sky-50 p-4 text-sm text-sky-900">
+              <CloudSun className="mt-0.5 h-4 w-4 shrink-0" />
+              Lukla flights depend on weather and often shift or cancel. Keep a spare day in your plan.
+            </p>
+          )}
 
-                <button
-                  type="button"
-                  onClick={() => setSelectedDate("2026-10-31")}
-                  className={`rounded-xl px-4 py-3 text-sm font-bold ${
-                    selectedDate === "2026-10-31"
-                      ? "bg-indigo-600 text-white"
-                      : "bg-slate-100 text-slate-700"
-                  }`}
-                >
-                  SAT, OCT 31
-                </button>
-
-                <button
-                  type="button"
-                  onClick={() => setSelectedDate("2026-11-01")}
-                  className={`rounded-xl px-4 py-3 text-sm font-bold ${
-                    selectedDate === "2026-11-01"
-                      ? "bg-indigo-600 text-white"
-                      : "bg-slate-100 text-slate-700"
-                  }`}
-                >
-                  NOV 1, 2026 →
-                </button>
-              </div>
+          {/* filters */}
+          <div className="mt-4 rounded-2xl bg-white p-4 shadow-sm">
+            <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-5">
+              <select aria-label="Airline" value={filters.airline} onChange={(e) => setFilters({ ...filters, airline: e.target.value })} className={input}>
+                {airlinesOnRoute.map((a) => <option key={a} value={a}>{a === "All" ? "All airlines" : a}</option>)}
+              </select>
+              <select aria-label="Departure time" value={filters.time} onChange={(e) => setFilters({ ...filters, time: e.target.value })} className={input}>
+                {["Any", "Morning", "Afternoon", "Evening"].map((t) => <option key={t} value={t}>{t === "Any" ? "Any departure time" : t}</option>)}
+              </select>
+              <select aria-label="Sort" value={sort} onChange={(e) => setSort(e.target.value)} className={input}>
+                <option value="cheapest">Cheapest first</option>
+                <option value="earliest">Earliest first</option>
+                <option value="fastest">Fastest first</option>
+              </select>
+              <label className="flex items-center gap-2 rounded-xl border border-slate-200 p-3 text-sm">
+                <input type="checkbox" checked={filters.refundable} onChange={(e) => setFilters({ ...filters, refundable: e.target.checked })} /> Refundable only
+              </label>
+              <label className="flex items-center gap-2 rounded-xl border border-slate-200 p-3 text-sm">
+                <input type="checkbox" checked={filters.bag} onChange={(e) => setFilters({ ...filters, bag: e.target.checked })} /> Checked bag included
+              </label>
             </div>
           </div>
 
-          <div className="max-w-7xl mx-auto px-4 py-7">
-            {/* Filters */}
-            <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
-              <div className="flex flex-wrap items-center justify-between gap-3">
-                <div>
-                  <h3 className="font-extrabold">7 Filters</h3>
-                  <p className="text-xs text-slate-500 mt-1">
-                    Narrow down your flight options
-                  </p>
-                </div>
-
-                <button
-                  type="button"
-                  onClick={() => {
-                    setAirlineFilter("All Airlines");
-                    setLuggageFilter("Any");
-                    setDepartureFilter("Any time");
-                    setSortBy("cheapest");
-                  }}
-                  className="text-sm font-bold text-indigo-600 hover:text-indigo-800"
-                >
-                  Reset Filters
-                </button>
+          <p className="mb-3 mt-6 text-sm text-slate-600">
+            {results.length} {results.length === 1 ? "flight" : "flights"} · lowest fare {money(lowestFare, cur)}
+          </p>
+          <div className="space-y-3">
+            {results.map((f) => <FlightCard key={f.id} f={f} price={farePrice(f, date)} cur={cur} onSelect={choose} />)}
+            {!results.length && (
+              <div className="rounded-2xl border border-dashed border-slate-300 bg-white p-10 text-center">
+                <p className="font-bold">No flights match these filters.</p>
+                <button type="button" onClick={() => setFilters({ airline: "All", time: "Any", refundable: false, bag: false })}
+                  className="mt-3 inline-flex items-center gap-2 text-sm font-bold text-teal-700"><RotateCcw className="h-4 w-4" />Clear filters</button>
               </div>
+            )}
+          </div>
+        </main>
+      )}
 
-              <div className="mt-4 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
-                <select
-                  value={airlineFilter}
-                  onChange={(e) => setAirlineFilter(e.target.value)}
-                  className="rounded-xl border border-slate-200 bg-white p-3 text-sm"
-                >
-                  <option>All Airlines</option>
-                  <option>SHREE AIRLINES</option>
-                  <option>BUDDHA AIR</option>
-                  <option>YETI AIRLINES</option>
-                </select>
-
-                <select
-                  value={luggageFilter}
-                  onChange={(e) => setLuggageFilter(e.target.value)}
-                  className="rounded-xl border border-slate-200 bg-white p-3 text-sm"
-                >
-                  <option value="Any">Luggage Option</option>
-                  <option value="Included">Luggage Included</option>
-                  <option value="Not included">Luggage Not Included</option>
-                </select>
-
-                <select
-                  value={departureFilter}
-                  onChange={(e) => setDepartureFilter(e.target.value)}
-                  className="rounded-xl border border-slate-200 bg-white p-3 text-sm"
-                >
-                  <option>Any time</option>
-                  <option>Morning</option>
-                  <option>Afternoon</option>
-                  <option>Evening</option>
-                </select>
-
-                <select
-                  value={sortBy}
-                  onChange={(e) => setSortBy(e.target.value)}
-                  className="rounded-xl border border-slate-200 bg-white p-3 text-sm"
-                >
-                  <option value="cheapest">Cheapest First</option>
-                </select>
-              </div>
-            </div>
-
-            {/* Results + Sidebar */}
-            <div className="mt-7 grid grid-cols-1 lg:grid-cols-[minmax(0,1fr)_320px] gap-6">
-              {/* Flight results */}
-              <section>
-                <div className="mb-5 flex flex-wrap items-center justify-between gap-3">
-                  <div>
-                    <h2 className="text-xl font-black">7 Filter Search</h2>
-                    <p className="mt-1 text-xs font-bold tracking-wider text-slate-500">
-                      DOMESTIC CARRIER LOWEST FARES
-                    </p>
+      {/* ============ CHECKOUT ============ */}
+      {step === "CHECKOUT" && flight && (
+        <main className="mx-auto max-w-6xl px-4 pb-10">
+          <button type="button" onClick={() => go("RESULTS")} className="mb-5 inline-flex items-center gap-2 text-sm font-bold text-teal-700">
+            <ArrowLeft className="h-4 w-4" /> Back to flights
+          </button>
+          <div className="grid gap-6 lg:grid-cols-5">
+            <form onSubmit={toPayment} className="space-y-6 lg:col-span-3">
+              {pax.map((p, i) => (
+                <fieldset key={i} className="rounded-2xl border border-slate-200 bg-white p-6">
+                  <legend className="px-2 text-sm font-black">Passenger {i + 1}</legend>
+                  <div className="grid gap-4 sm:grid-cols-2">
+                    <div className="sm:col-span-2">
+                      <label className="mb-1 block text-sm font-bold" htmlFor={`n${i}`}>Full name</label>
+                      <input id={`n${i}`} required autoComplete="name" placeholder="Name as shown on ID" value={p.name}
+                        onChange={(e) => updatePax(i, "name", e.target.value)} className={input} />
+                    </div>
+                    <div>
+                      <label className="mb-1 block text-sm font-bold" htmlFor={`e${i}`}>Email</label>
+                      <input id={`e${i}`} type="email" required={i === 0} placeholder="you@example.com" value={p.email}
+                        onChange={(e) => updatePax(i, "email", e.target.value)} className={input} />
+                    </div>
+                    <div>
+                      <label className="mb-1 block text-sm font-bold" htmlFor={`p${i}`}>Phone</label>
+                      <input id={`p${i}`} type="tel" required={i === 0} pattern="[+0-9 ]{7,16}" placeholder="+977 98XXXXXXXX" value={p.phone}
+                        onChange={(e) => updatePax(i, "phone", e.target.value)} className={input} />
+                    </div>
+                    <div className="sm:col-span-2">
+                      <label className="mb-1 block text-sm font-bold" htmlFor={`d${i}`}>Passport or citizenship number</label>
+                      <input id={`d${i}`} required minLength={5} placeholder="Document number" value={p.doc}
+                        onChange={(e) => updatePax(i, "doc", e.target.value)} className={input} />
+                    </div>
                   </div>
+                </fieldset>
+              ))}
 
-                  <span className="rounded-full bg-emerald-50 px-3 py-2 text-xs font-bold text-emerald-700">
-                    ● REAL-TIME API SYNCHRONIZED
-                  </span>
-                </div>
-
-                <div className="space-y-3">
-                  {filteredFares.map((fare) => (
-                    <div
-                      key={fare.id}
-                      className="group flex flex-col sm:flex-row sm:items-center justify-between gap-4 rounded-2xl border border-slate-200 bg-white p-5 shadow-sm transition hover:border-indigo-300 hover:shadow-md"
-                    >
-                      <div className="flex items-center gap-4">
-                        <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-xl bg-indigo-50 text-indigo-600">
-                          <Plane size={23} />
-                        </div>
-
-                        <div>
-                          <h3 className="font-extrabold">{fare.airline}</h3>
-
-                          <p className="mt-1 text-sm text-slate-500">
-                            KTM → PKR · {fare.time}
-                          </p>
-
-                          <p className="mt-1 text-xs text-slate-400">
-                            Luggage: {fare.luggage}
-                          </p>
-                        </div>
-                      </div>
-
-                      <div className="flex items-center justify-between sm:justify-end gap-5">
-                        <div className="sm:text-right">
-                          <p className="text-xs text-slate-500">
-                            Price per adult
-                          </p>
-                          <p className="text-xl font-black text-indigo-700">
-                            NPR {fare.price.toLocaleString("en-US")}
-                          </p>
-                        </div>
-
-                        <button
-                          type="button"
-                          onClick={() => {
-                            setSelectedFlight(fare);
-                            setStage("CHECKOUT");
-                          }}
-                          className="rounded-xl bg-indigo-600 px-5 py-3 text-sm font-bold text-white transition hover:bg-indigo-700"
-                        >
-                          Select
-                        </button>
-                      </div>
-                    </div>
+              <section className="rounded-2xl border border-slate-200 bg-white p-6">
+                <h3 className="font-black">Choose seats</h3>
+                <div className="my-3 flex flex-wrap gap-2">
+                  {pax.map((p, i) => (
+                    <button key={i} type="button" onClick={() => setActive(i)} aria-pressed={active === i}
+                      className={`rounded-full px-4 py-2 text-xs font-bold ${active === i ? "bg-teal-700 text-white" : "bg-slate-100 text-slate-700"}`}>
+                      {p.name.split(" ")[0] || `Passenger ${i + 1}`}: {p.seat || "no seat"}
+                    </button>
                   ))}
-
-                  {filteredFares.length === 0 && (
-                    <div className="rounded-2xl border border-dashed border-slate-300 bg-white p-10 text-center">
-                      <p className="font-bold">
-                        No flights match these filters.
-                      </p>
-                      <p className="mt-2 text-sm text-slate-500">
-                        Try changing your airline, luggage, or departure-time
-                        filters.
-                      </p>
-                    </div>
-                  )}
                 </div>
+                <SeatMap flightId={flight.id} pax={pax} active={active} onPick={pickSeat} />
+                <p className="mt-3 text-center text-xs text-slate-500">
+                  Demo seat map. Real availability comes from the airline or your booking backend.
+                </p>
               </section>
 
-              {/* Departure fare calendar */}
-              <aside className="h-fit rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
-                <h3 className="text-lg font-black">Departure</h3>
-
-                <p className="mt-1 text-sm font-semibold text-slate-500">
-                  KTM → PKR
-                </p>
-
-                <p className="mt-1 text-xs text-slate-400">OCT 2026</p>
-
-                <div className="mt-5 grid grid-cols-7 gap-1 text-center text-xs font-bold text-slate-500">
-                  {["Su", "Mo", "Tu", "We", "Th", "Fr", "Sa"].map((day) => (
-                    <div key={day} className="py-2">
-                      {day}
-                    </div>
-                  ))}
-                </div>
-
-                <div className="grid grid-cols-7 gap-1">
-                  {fareCalendar.map((day) => (
-                    <button
-                      key={day.day}
-                      type="button"
-                      onClick={() =>
-                        setSelectedDate(
-                          `2026-10-${String(day.day).padStart(2, "0")}`,
-                        )
-                      }
-                      className={`min-w-0 rounded-lg px-1 py-2 text-center transition ${
-                        selectedDate ===
-                        `2026-10-${String(day.day).padStart(2, "0")}`
-                          ? "bg-indigo-600 text-white"
-                          : "bg-slate-50 hover:bg-indigo-50"
-                      }`}
-                    >
-                      <span className="block text-xs font-bold">{day.day}</span>
-                      <span className="mt-1 block text-[9px]">
-                        {day.price.toLocaleString("en-US")}
-                      </span>
-                    </button>
-                  ))}
-                </div>
-
-                <div className="mt-5 rounded-xl bg-emerald-50 p-4">
-                  <p className="text-xs font-semibold text-emerald-700">
-                    Lowest Fare Today:
-                  </p>
-                  <p className="mt-1 text-xl font-black text-emerald-800">
-                    NPR{" "}
-                    {Math.min(
-                      ...fareCalendar.map((day) => day.price),
-                    ).toLocaleString("en-US")}
-                  </p>
-                </div>
-              </aside>
-            </div>
-          </div>
-        </div>
-      )}
-      {/* PASSENGER CHECKOUT */}
-      {step === "CHECKOUT" && selectedFlight && (
-        <main className="mx-auto max-w-5xl px-4 py-8">
-          <button
-            type="button"
-            onClick={() => setStep("RESULTS")}
-            className="mb-6 inline-flex items-center gap-2 text-sm font-bold text-teal-700"
-          >
-            <ArrowLeft className="h-4 w-4" />
-            Back to flights
-          </button>
-
-          <SectionTitle
-            eyebrow="Step 2 of 3"
-            title="Passenger details"
-            description="Enter the passenger information for this booking."
-          />
-
-          <div className="grid gap-6 lg:grid-cols-5">
-            <form
-              onSubmit={handleProceedToPayment}
-              className="space-y-6 rounded-2xl border border-slate-200 bg-white p-6 lg:col-span-3"
-            >
-              <div className="grid gap-4 sm:grid-cols-2">
-                <div className="sm:col-span-2">
-                  <label
-                    htmlFor="fullName"
-                    className="mb-2 block text-sm font-bold"
-                  >
-                    Full name
-                  </label>
-                  <input
-                    id="fullName"
-                    name="fullName"
-                    value={passenger.fullName}
-                    onChange={handlePassengerChange}
-                    required
-                    autoComplete="name"
-                    placeholder="Name as shown on ID"
-                    className="w-full rounded-xl border border-slate-200 p-3 text-sm outline-none focus:border-teal-600"
-                  />
-                </div>
-
-                <div>
-                  <label
-                    htmlFor="email"
-                    className="mb-2 block text-sm font-bold"
-                  >
-                    Email address
-                  </label>
-                  <input
-                    id="email"
-                    name="email"
-                    type="email"
-                    value={passenger.email}
-                    onChange={handlePassengerChange}
-                    required
-                    autoComplete="email"
-                    placeholder="you@example.com"
-                    className="w-full rounded-xl border border-slate-200 p-3 text-sm outline-none focus:border-teal-600"
-                  />
-                </div>
-
-                <div>
-                  <label
-                    htmlFor="phone"
-                    className="mb-2 block text-sm font-bold"
-                  >
-                    Phone number
-                  </label>
-                  <input
-                    id="phone"
-                    name="phone"
-                    type="tel"
-                    value={passenger.phone}
-                    onChange={handlePassengerChange}
-                    required
-                    autoComplete="tel"
-                    placeholder="+977 98XXXXXXXX"
-                    className="w-full rounded-xl border border-slate-200 p-3 text-sm outline-none focus:border-teal-600"
-                  />
-                </div>
-
-                <div className="sm:col-span-2">
-                  <label
-                    htmlFor="passport"
-                    className="mb-2 block text-sm font-bold"
-                  >
-                    Passport / citizenship number
-                  </label>
-                  <input
-                    id="passport"
-                    name="passport"
-                    value={passenger.passport}
-                    onChange={handlePassengerChange}
-                    required
-                    placeholder="Enter document number"
-                    className="w-full rounded-xl border border-slate-200 p-3 text-sm outline-none focus:border-teal-600"
-                  />
-                </div>
-              </div>
-
-              <div className="border-t border-slate-100 pt-5">
-                <h3 className="mb-3 font-black">Choose your seat</h3>
-                <div className="grid grid-cols-3 gap-3 sm:grid-cols-5">
-                  {SEATS.map((seat) => (
-                    <button
-                      type="button"
-                      key={seat}
-                      onClick={() => setSelectedSeat(seat)}
-                      aria-pressed={selectedSeat === seat}
-                      className={`rounded-xl border p-3 text-sm font-bold transition ${
-                        selectedSeat === seat
-                          ? "border-teal-700 bg-teal-700 text-white"
-                          : "border-slate-200 bg-[#F4F6EF] hover:border-teal-600"
-                      }`}
-                    >
-                      {seat}
-                    </button>
-                  ))}
-                </div>
-                <p className="mt-2 text-xs text-slate-500">
-                  Sample seat selection only. Actual availability must be
-                  confirmed by the airline or booking backend.
-                </p>
-              </div>
-
-              <button
-                type="submit"
-                className="w-full rounded-xl bg-teal-700 p-4 font-black text-white transition hover:bg-teal-800"
-              >
-                Continue to payment
-                <ArrowRight className="ml-2 inline h-5 w-5" />
+              {error && <p role="alert" className="text-sm font-semibold text-red-600">{error}</p>}
+              <button type="submit" className="w-full rounded-xl bg-teal-700 p-4 font-black text-white transition hover:bg-teal-800">
+                Continue to payment <ArrowRight className="ml-1 inline h-5 w-5" />
               </button>
             </form>
 
-            <aside className="h-fit rounded-2xl border border-slate-200 bg-white p-6 lg:col-span-2">
-              <h3 className="text-lg font-black">Booking summary</h3>
-
-              <div className="my-5 rounded-xl bg-[#F4F6EF] p-4">
-                <p className="font-black">{selectedFlight.airline}</p>
-                <p className="mt-1 text-xs text-slate-500">
-                  Flight {selectedFlight.flightNo}
-                </p>
-                <div className="my-4 flex items-center justify-between gap-2">
-                  <div>
-                    <p className="text-xl font-black">
-                      {selectedFlight.fromCode}
-                    </p>
-                    <p className="text-xs text-slate-500">
-                      {selectedFlight.depTime}
-                    </p>
-                  </div>
+            <aside className="h-fit rounded-2xl border border-slate-200 bg-white p-6 lg:sticky lg:top-24 lg:col-span-2">
+              <h3 className="text-lg font-black">Trip summary</h3>
+              <div className="my-4 rounded-xl bg-[#F4F6EF] p-4">
+                <p className="font-black">{flight.airline} · {flight.no}</p>
+                <div className="my-3 flex items-center justify-between">
+                  <div><p className="text-xl font-black">{flight.from}</p><p className="text-xs text-slate-500">{to12h(flight.dep)}</p></div>
                   <Plane className="h-5 w-5 text-teal-700" />
-                  <div className="text-right">
-                    <p className="text-xl font-black">
-                      {selectedFlight.toCode}
-                    </p>
-                    <p className="text-xs text-slate-500">
-                      {selectedFlight.arrTime}
-                    </p>
-                  </div>
+                  <div className="text-right"><p className="text-xl font-black">{flight.to}</p><p className="text-xs text-slate-500">{to12h(flight.arr)}</p></div>
                 </div>
-                <p className="text-xs text-slate-500">
-                  <CalendarDays className="mr-2 inline h-4 w-4" />
-                  {departDate}
-                </p>
+                <p className="text-xs text-slate-500"><CalendarDays className="mr-1 inline h-4 w-4" />{fmtDate(date, { weekday: "short", day: "numeric", month: "long", year: "numeric" })}</p>
               </div>
-
-              <div className="space-y-3 text-sm">
-                <div className="flex justify-between gap-3">
-                  <span className="text-slate-500">Price per passenger</span>
-                  <span className="font-bold">
-                    {formatPrice(unitPrice, currency)}
-                  </span>
-                </div>
-                <div className="flex justify-between gap-3">
-                  <span className="text-slate-500">Passengers</span>
-                  <span className="font-bold">{paxCount}</span>
-                </div>
-                <div className="flex justify-between gap-3">
-                  <span className="text-slate-500">Selected seat</span>
-                  <span className="font-bold">{selectedSeat}</span>
-                </div>
-                <div className="flex justify-between gap-3 border-t border-slate-100 pt-4">
-                  <span className="font-black">Total</span>
-                  <span className="text-xl font-black text-teal-700">
-                    {formatPrice(totalAmount, currency)}
-                  </span>
-                </div>
-              </div>
+              <dl className="space-y-3 text-sm">
+                <div className="flex justify-between"><dt className="text-slate-500">{paxCount} × adult fare</dt><dd className="font-bold">{money(base, cur)}</dd></div>
+                <div className="flex justify-between"><dt className="text-slate-500">Taxes and fees</dt><dd className="font-bold">{money(taxes, cur)}</dd></div>
+                <div className="flex justify-between border-t border-slate-100 pt-3"><dt className="font-black">Total</dt><dd className="text-xl font-black text-teal-700">{money(total, cur)}</dd></div>
+              </dl>
+              <p className="mt-4 text-xs text-slate-500">{flight.refundable ? "This fare is refundable." : "This fare is non-refundable."}</p>
             </aside>
           </div>
         </main>
       )}
-      {/* PAYMENT DEMO */}
-      {step === "KHALTI_PAY" && selectedFlight && (
-        <main className="mx-auto max-w-lg px-4 py-10">
-          <button
-            type="button"
-            onClick={() => setStep("CHECKOUT")}
-            className="mb-6 inline-flex items-center gap-2 text-sm font-bold text-teal-700"
-          >
-            <ArrowLeft className="h-4 w-4" />
-            Back to passenger details
+
+      {/* ============ PAYMENT ============ */}
+      {step === "PAYMENT" && flight && (
+        <main className="mx-auto max-w-lg px-4 pb-10">
+          <button type="button" onClick={() => go("CHECKOUT")} disabled={paying}
+            className="mb-5 inline-flex items-center gap-2 text-sm font-bold text-teal-700 disabled:opacity-50">
+            <ArrowLeft className="h-4 w-4" /> Back to passengers
           </button>
-
           <div className="rounded-2xl border border-slate-200 bg-white p-6 shadow-xl sm:p-8">
-            <div className="rounded-xl bg-purple-700 p-5 text-center text-white">
-              <Wallet className="mx-auto h-8 w-8" />
-              <h1 className="mt-2 text-2xl font-black">Khalti payment</h1>
-              <p className="mt-1 text-xs text-purple-100">
-                Tripzo flight booking
-              </p>
+            <h1 className="text-2xl font-black">Pay {money(total, cur)}</h1>
+            <p className="mt-1 text-sm text-slate-500">{flight.from} to {flight.to} · {fmtDate(date)} · {paxCount} {paxCount === 1 ? "adult" : "adults"}</p>
+
+            <div className="mt-6 grid gap-3" role="radiogroup" aria-label="Payment method">
+              {[
+                { name: "Khalti", icon: Wallet, color: "border-purple-600 bg-purple-50" },
+                { name: "eSewa", icon: Wallet, color: "border-green-600 bg-green-50" },
+                { name: "Card", icon: CreditCard, color: "border-teal-600 bg-teal-50" },
+              ].map(({ name, icon: Icon, color }) => (
+                <button key={name} type="button" role="radio" aria-checked={method === name} onClick={() => setMethod(name)}
+                  className={`flex items-center gap-3 rounded-xl border-2 p-4 text-left font-bold ${method === name ? color : "border-slate-200"}`}>
+                  <Icon className="h-5 w-5" /> {name === "Card" ? "Debit or credit card" : name}
+                </button>
+              ))}
             </div>
 
-            <div className="my-6 space-y-4">
-              <div className="flex justify-between gap-4 text-sm">
-                <span className="text-slate-500">Flight</span>
-                <span className="text-right font-bold">
-                  {selectedFlight.flightNo}
-                </span>
-              </div>
-              <div className="flex justify-between gap-4 text-sm">
-                <span className="text-slate-500">Passenger</span>
-                <span className="text-right font-bold">
-                  {passenger.fullName}
-                </span>
-              </div>
-              <div className="flex justify-between gap-4 text-sm">
-                <span className="text-slate-500">Date</span>
-                <span className="font-bold">{departDate}</span>
-              </div>
-              <div className="flex justify-between gap-4 border-t border-slate-100 pt-4">
-                <span className="font-black">Total amount</span>
-                <span className="text-xl font-black text-purple-700">
-                  {formatPrice(totalAmount, currency)}
-                </span>
-              </div>
+            <div className="my-5 rounded-xl border border-amber-200 bg-amber-50 p-4 text-xs leading-5 text-amber-900">
+              <p className="font-black">Demo mode</p>
+              The button below simulates a successful payment. It does not charge money or contact {method}.
             </div>
 
-            <div className="mb-5 rounded-xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-900">
-              <p className="font-black">Development demo</p>
-              <p className="mt-1 text-xs leading-5">
-                The button below simulates a successful payment. It does not
-                charge money or verify a transaction with Khalti.
-              </p>
-            </div>
-
-            {paymentMessage && (
-              <p className="mb-4 text-sm text-red-600">{paymentMessage}</p>
-            )}
-
-            <button
-              type="button"
-              onClick={handleDemoPayment}
-              className="w-full rounded-xl bg-purple-700 p-4 font-black text-white transition hover:bg-purple-800"
-            >
-              Simulate successful payment
-              <CheckCircle2 className="ml-2 inline h-5 w-5" />
-            </button>
-
-            <button
-              type="button"
-              onClick={() => setStep("CHECKOUT")}
-              className="mt-3 w-full rounded-xl bg-slate-100 p-3 text-sm font-bold text-slate-700 hover:bg-slate-200"
-            >
-              Cancel
+            <button type="button" onClick={pay} disabled={paying}
+              className="flex w-full items-center justify-center gap-2 rounded-xl bg-[#13294B] p-4 font-black text-white transition hover:bg-[#1c3a69] disabled:opacity-70">
+              {paying ? <><Loader2 className="h-5 w-5 animate-spin" /> Processing payment</> : <>Simulate {method} payment</>}
             </button>
           </div>
         </main>
       )}
-      {/* E-TICKET */}
-      {step === "ETICKET" && issuedTicket && (
-        <main className="mx-auto max-w-2xl px-4 py-10">
-          <div className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-xl">
-            <div className="bg-[#13294B] p-8 text-center text-white">
-              <CheckCircle2 className="mx-auto h-12 w-12 text-teal-300" />
-              <p className="mt-3 text-xs font-bold uppercase tracking-widest text-teal-300">
-                Demo booking confirmation
-              </p>
-              <h1 className="mt-2 text-3xl font-black">TRIPZO</h1>
-              <p className="mt-3 text-sm text-white/70">Booking reference</p>
-              <p className="mt-1 font-mono text-2xl font-black">
-                {issuedTicket.pnr}
-              </p>
-            </div>
 
-            <div className="space-y-6 p-6 sm:p-8">
-              <div className="rounded-xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-900">
-                This is a sample ticket generated by the frontend demo. It is
-                not a real airline ticket or proof of payment.
-              </div>
+      {/* ============ TICKET ============ */}
+      {step === "TICKET" && ticket && (
+        <main className="mx-auto max-w-2xl px-4 pb-10">
+          <div className="rounded-2xl bg-[#13294B] p-8 text-center text-white">
+            <CheckCircle2 className="mx-auto h-12 w-12 text-teal-300" />
+            <h1 className="mt-3 text-2xl font-black">Booking confirmed</h1>
+            <p className="mt-3 text-sm text-white/70">Booking reference</p>
+            <p className="font-mono text-3xl font-black tracking-wider">{ticket.pnr}</p>
+          </div>
 
-              <div className="grid gap-5 sm:grid-cols-2">
-                <div>
-                  <p className="text-xs font-bold uppercase text-slate-400">
-                    Passenger
-                  </p>
-                  <p className="mt-1 font-black">
-                    {issuedTicket.passenger.fullName}
-                  </p>
-                </div>
-                <div>
-                  <p className="text-xs font-bold uppercase text-slate-400">
-                    Email
-                  </p>
-                  <p className="mt-1 break-all font-bold">
-                    {issuedTicket.passenger.email}
-                  </p>
-                </div>
-                <div>
-                  <p className="text-xs font-bold uppercase text-slate-400">
-                    Airline
-                  </p>
-                  <p className="mt-1 font-black">
-                    {issuedTicket.flight.airline}
-                  </p>
-                  <p className="text-sm text-slate-500">
-                    {issuedTicket.flight.flightNo}
-                  </p>
-                </div>
-                <div>
-                  <p className="text-xs font-bold uppercase text-slate-400">
-                    Seat
-                  </p>
-                  <p className="mt-1 font-black">{issuedTicket.seat}</p>
-                </div>
-                <div>
-                  <p className="text-xs font-bold uppercase text-slate-400">
-                    Route
-                  </p>
-                  <p className="mt-1 font-black">
-                    {issuedTicket.flight.fromCode} →{" "}
-                    {issuedTicket.flight.toCode}
-                  </p>
-                </div>
-                <div>
-                  <p className="text-xs font-bold uppercase text-slate-400">
-                    Departure
-                  </p>
-                  <p className="mt-1 font-black">
-                    {issuedTicket.departureDate}
-                  </p>
-                  <p className="text-sm text-slate-500">
-                    {issuedTicket.flight.depTime}
-                  </p>
-                </div>
-                <div>
-                  <p className="text-xs font-bold uppercase text-slate-400">
-                    Passengers
-                  </p>
-                  <p className="mt-1 font-black">
-                    {issuedTicket.passengerCount}
-                  </p>
-                </div>
-                <div>
-                  <p className="text-xs font-bold uppercase text-slate-400">
-                    Total amount
-                  </p>
-                  <p className="mt-1 text-xl font-black text-teal-700">
-                    {formatPrice(
-                      issuedTicket.totalAmount,
-                      issuedTicket.currency,
-                    )}
-                  </p>
-                </div>
-              </div>
+          <p className="mt-4 rounded-xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-900">
+            This is a demo ticket from the frontend. It is not a real airline ticket or proof of payment.
+          </p>
 
-              <div className="border-t border-dashed border-slate-300 pt-5">
-                <div className="flex items-center gap-3 rounded-xl bg-[#F4F6EF] p-4">
-                  <Ticket className="h-8 w-8 shrink-0 text-teal-700" />
+          <div className="mt-4 space-y-4">
+            {ticket.pax.map((p, i) => (
+              <div key={i} className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
+                <div className="flex items-center justify-between bg-teal-700 px-6 py-3 text-white">
+                  <span className="flex items-center gap-2 font-black"><Ticket className="h-4 w-4" /> Boarding pass</span>
+                  <span className="text-sm">{ticket.flight.airline} · {ticket.flight.no}</span>
+                </div>
+                <div className="grid gap-5 p-6 sm:grid-cols-[1fr_auto]">
                   <div>
-                    <p className="font-black">Tripzo booking record</p>
-                    <p className="text-xs text-slate-500">
-                      Created {issuedTicket.issuedDate}
-                    </p>
+                    <p className="text-xs text-slate-500">Passenger</p>
+                    <p className="text-lg font-black">{p.name}</p>
+                    <div className="my-4 flex items-center gap-4">
+                      <div><p className="text-3xl font-black">{ticket.flight.from}</p><p className="text-xs text-slate-500">{to12h(ticket.flight.dep)}</p></div>
+                      <Plane className="h-5 w-5 rotate-45 text-teal-700" />
+                      <div><p className="text-3xl font-black">{ticket.flight.to}</p><p className="text-xs text-slate-500">{to12h(ticket.flight.arr)}</p></div>
+                    </div>
+                    <p className="text-sm text-slate-600">{fmtDate(ticket.date, { weekday: "long", day: "numeric", month: "long", year: "numeric" })}</p>
+                  </div>
+                  <div className="flex gap-6 border-t border-dashed border-slate-300 pt-4 sm:flex-col sm:gap-3 sm:border-l sm:border-t-0 sm:pl-6 sm:pt-0">
+                    <div><p className="text-xs text-slate-500">Seat</p><p className="text-2xl font-black">{p.seat}</p></div>
+                    <div><p className="text-xs text-slate-500">Bags</p><p className="text-sm font-bold">{ticket.flight.bag ? `${ticket.flight.bag} kg + 5 kg` : "5 kg cabin"}</p></div>
                   </div>
                 </div>
               </div>
+            ))}
+          </div>
 
-              <div className="flex flex-col gap-3 sm:flex-row">
-                <button
-                  type="button"
-                  onClick={() => window.print()}
-                  className="flex-1 rounded-xl bg-teal-700 p-4 font-black text-white hover:bg-teal-800"
-                >
-                  Print / Save PDF
-                </button>
-                <button
-                  type="button"
-                  onClick={resetBooking}
-                  className="flex-1 rounded-xl bg-slate-100 p-4 font-black text-slate-700 hover:bg-slate-200"
-                >
-                  Book another flight
-                </button>
-              </div>
-            </div>
+          <div className="mt-4 flex items-center justify-between rounded-2xl bg-white p-5 text-sm shadow-sm">
+            <span className="text-slate-500">Paid with {ticket.method} on {ticket.issued}</span>
+            <span className="text-lg font-black text-teal-700">{money(ticket.total, ticket.cur)}</span>
+          </div>
+
+          <div className="no-print mt-4 flex flex-col gap-3 sm:flex-row">
+            <button type="button" onClick={() => window.print()}
+              className="flex flex-1 items-center justify-center gap-2 rounded-xl bg-teal-700 p-4 font-black text-white hover:bg-teal-800">
+              <Printer className="h-5 w-5" /> Print or save PDF
+            </button>
+            <button type="button" onClick={reset}
+              className="flex-1 rounded-xl bg-white p-4 font-black text-slate-700 shadow-sm hover:bg-slate-100">Book another flight</button>
           </div>
         </main>
       )}
-      {/* FOOTER */}
-      <footer className="mt-12 border-t border-slate-200 bg-white px-4 py-8">
-        <div className="mx-auto flex max-w-7xl flex-col items-center justify-between gap-3 text-center sm:flex-row sm:text-left">
-          <div>
-            <p className="font-black text-[#13294B]">TRIPZO NEPAL</p>
-            <p className="mt-1 text-xs text-slate-500">
-              Your journey, made simpler.
-            </p>
-          </div>
-          <p className="text-xs text-slate-400">
-            Sample flight data · Demo booking interface
-          </p>
+
+      <footer className="no-print mt-10 border-t border-slate-200 bg-white px-4 py-8">
+        <div className="mx-auto flex max-w-7xl flex-col items-center justify-between gap-2 text-center sm:flex-row sm:text-left">
+          <p className="font-black">Tripzo Nepal</p>
+          <p className="text-xs text-slate-400">Sample flight data · demo booking interface</p>
         </div>
       </footer>
     </div>
   );
 }
+
