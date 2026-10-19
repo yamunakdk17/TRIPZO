@@ -4,12 +4,18 @@ const express = require("express");
 const cors = require("cors");
 const pool = require("./db");
 
+const flightRoutes = require("./routes/flightRoutes");
+
+
 const app = express();
 const PORT = process.env.PORT || 5000;
 
 // Middleware
 app.use(cors({ origin: "http://localhost:5173" }));
 app.use(express.json());
+
+app.use("/api/flights", flightRoutes);
+
 
 // Test whether the API is running
 app.get("/api/health", (req, res) => {
