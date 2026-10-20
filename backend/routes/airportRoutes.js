@@ -6,7 +6,7 @@ import {
 
 const router = Router();
 
-router.get("/get", getAirports);
+router.get("/", getAirports);
 router.get("/:code", getAirportByCode);
 
 export default router;
