@@ -11,12 +11,23 @@ export default function App() {
   const [activeTab, setActiveTab] = useState("flights");
   const [currency, setCurrency] = useState("NPR");
 
-  const formatPrice = (npr) => {
-    if (currency === "NPR") {
-      return `NPR ${Number(npr).toLocaleString()}`;
-    }
-    return `$${Math.round(Number(npr) / 133)}`;
-  };
+const formatPrice = (amount, fromCurrency = "NPR") => {
+  const value = Number(amount);
+
+  if (fromCurrency === currency) {
+    return currency === "NPR"
+      ? `NPR ${value.toLocaleString()}`
+      : `$${value.toLocaleString()}`;
+  }
+
+  if (fromCurrency === "USD" && currency === "NPR") {
+    return `NPR ${(value * 133).toLocaleString()}`;
+  }
+
+  if (fromCurrency === "NPR" && currency === "USD") {
+    return `$${(value / 133).toFixed(2)}`;
+  }
+};
 
   return (
     <div className="min-h-screen bg-[#F4F6EF] text-[#13294B] font-sans antialiased flex flex-col">
