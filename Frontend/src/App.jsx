@@ -7,6 +7,7 @@ import AirportTaxi from "./components/AirportTaxi";
 import StaysBooking from "./components/StaysBooking";
 import AiPlanner from "./components/AiPlanner";
 import AdminDashboard from "./pages/AdminDashboard";
+import CustomerAccount from "./components/CustomerAccount";
 export default function App() {
   const [activeTab, setActiveTab] = useState("flights");
   const [currency, setCurrency] = useState("NPR");
@@ -48,6 +49,7 @@ if (window.location.pathname.startsWith("/admin")) {
         {activeTab === "taxi" && <AirportTaxi formatPrice={formatPrice} />}
         {activeTab === "stays" && <StaysBooking formatPrice={formatPrice} />}
         {activeTab === "planner" && <AiPlanner formatPrice={formatPrice} />}
+        {activeTab === "account" && <CustomerAccount />}
       </main>
 
       <Footer />

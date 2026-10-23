@@ -315,6 +315,108 @@ export async function deleteAdminHotel(req, res, next) {
   }
 }
 
+export async function adminHotelReservations(req, res, next) {
+  try {
+    const [rows] = await pool.execute(`
+      SELECT
+        r.id,
+        h.name AS hotelName,
+        room.room_name AS roomName,
+        r.guest_name AS guestName,
+        r.guest_email AS guestEmail,
+        r.guest_phone AS guestPhone,
+        r.check_in AS checkIn,
+        r.check_out AS checkOut,
+        r.guests,
+        r.nights,
+        r.total_amount AS totalAmount,
+        r.currency,
+        r.booking_reference AS bookingReference,
+        r.payment_status AS paymentStatus,
+        r.payment_method AS paymentMethod,
+        r.room_count AS rooms,
+        r.status,
+        r.created_at AS createdAt
+      FROM hotel_reservations r
+      JOIN hotels h ON h.id = r.hotel_id
+      JOIN hotel_rooms room ON room.id = r.room_id
+      ORDER BY r.created_at DESC
+      LIMIT 500
+    `);
+    res.json({
+      success: true,
+      data: rows.map((row) => ({
+        ...row,
+        guests: Number(row.guests),
+        nights: Number(row.nights),
+        totalAmount: Number(row.totalAmount),
+      })),
+    });
+  } catch (error) {
+    next(error);
+  }
+}
+
+export async function adminHotelContent(req, res, next) {
+  try {
+    const hotelId = Number(req.params.hotelId);
+    if (!Number.isSafeInteger(hotelId) || hotelId < 1) throw new HttpError(400, "Invalid hotel ID.");
+    const [hotels] = await pool.execute("SELECT id FROM hotels WHERE id = ? LIMIT 1", [hotelId]);
+    if (!hotels.length) throw new HttpError(404, "Hotel not found.");
+    const [[images], [amenities], [nearbyPlaces]] = await Promise.all([
+      pool.execute("SELECT id, image_url AS imageUrl, alt_text AS altText, sort_order AS sortOrder, is_primary AS isPrimary FROM hotel_images WHERE hotel_id = ? ORDER BY sort_order, id", [hotelId]),
+      pool.execute("SELECT id, amenity_name AS name FROM hotel_amenities WHERE hotel_id = ? ORDER BY amenity_name", [hotelId]),
+      pool.execute("SELECT id, name, category, distance_km AS distanceKm, estimated_minutes AS estimatedMinutes, latitude, longitude FROM hotel_nearby_places WHERE hotel_id = ? ORDER BY distance_km, name", [hotelId]),
+    ]);
+    res.json({ success: true, data: { images, amenities, nearbyPlaces } });
+  } catch (error) { next(error); }
+}
+
+export async function saveAdminHotelContent(req, res, next) {
+  const connection = await pool.getConnection();
+  try {
+    const hotelId = Number(req.params.hotelId);
+    if (!Number.isSafeInteger(hotelId) || hotelId < 1) throw new HttpError(400, "Invalid hotel ID.");
+    const images = req.body?.images;
+    const amenities = req.body?.amenities;
+    const nearbyPlaces = req.body?.nearbyPlaces;
+    if (!Array.isArray(images) || !Array.isArray(amenities) || !Array.isArray(nearbyPlaces)) throw new HttpError(400, "Images, amenities and nearby places must be provided as arrays.");
+    if (images.length > 30 || amenities.length > 60 || nearbyPlaces.length > 100) throw new HttpError(400, "Too many hotel details in one request.");
+    const normalizedImages = images.map((item, index) => {
+      const url = String(item?.imageUrl || "").trim();
+      let parsed;
+      try { parsed = new URL(url); } catch { throw new HttpError(400, `Image ${index + 1} must use a valid URL.`); }
+      if (!["https:", "http:"].includes(parsed.protocol)) throw new HttpError(400, "Hotel images must use HTTP or HTTPS URLs.");
+      return { imageUrl: url, altText: String(item?.altText || "").trim().slice(0, 255), sortOrder: index, isPrimary: Boolean(item?.isPrimary) };
+    });
+    if (normalizedImages.filter((item) => item.isPrimary).length > 1) throw new HttpError(400, "Choose only one primary image.");
+    const normalizedAmenities = [...new Set(amenities.map((item) => String(item?.name || item || "").trim()).filter(Boolean))];
+    if (normalizedAmenities.some((item) => item.length > 100)) throw new HttpError(400, "Amenity names must be 100 characters or fewer.");
+    const normalizedPlaces = nearbyPlaces.map((item) => ({
+      name: String(item?.name || "").trim(), category: String(item?.category || "").trim(),
+      distanceKm: item?.distanceKm === "" || item?.distanceKm == null ? null : Number(item.distanceKm),
+      estimatedMinutes: item?.estimatedMinutes === "" || item?.estimatedMinutes == null ? null : Number(item.estimatedMinutes),
+      latitude: item?.latitude === "" || item?.latitude == null ? null : Number(item.latitude),
+      longitude: item?.longitude === "" || item?.longitude == null ? null : Number(item.longitude),
+    }));
+    if (normalizedPlaces.some((item) => !item.name || item.name.length > 180 || (item.distanceKm != null && (!Number.isFinite(item.distanceKm) || item.distanceKm < 0)) || (item.estimatedMinutes != null && (!Number.isInteger(item.estimatedMinutes) || item.estimatedMinutes < 0)))) throw new HttpError(400, "Nearby place details are invalid.");
+    await connection.beginTransaction();
+    const [exists] = await connection.execute("SELECT id FROM hotels WHERE id = ? FOR UPDATE", [hotelId]);
+    if (!exists.length) throw new HttpError(404, "Hotel not found.");
+    await connection.execute("DELETE FROM hotel_images WHERE hotel_id = ?", [hotelId]);
+    await connection.execute("DELETE FROM hotel_amenities WHERE hotel_id = ?", [hotelId]);
+    await connection.execute("DELETE FROM hotel_nearby_places WHERE hotel_id = ?", [hotelId]);
+    for (const image of normalizedImages) await connection.execute("INSERT INTO hotel_images (hotel_id, image_url, alt_text, sort_order, is_primary) VALUES (?, ?, ?, ?, ?)", [hotelId, image.imageUrl, image.altText || null, image.sortOrder, image.isPrimary ? 1 : 0]);
+    for (const name of normalizedAmenities) await connection.execute("INSERT INTO hotel_amenities (hotel_id, amenity_name) VALUES (?, ?)", [hotelId, name]);
+    for (const place of normalizedPlaces) await connection.execute("INSERT INTO hotel_nearby_places (hotel_id, name, category, distance_km, estimated_minutes, latitude, longitude) VALUES (?, ?, ?, ?, ?, ?, ?)", [hotelId, place.name, place.category || null, place.distanceKm, place.estimatedMinutes, place.latitude, place.longitude]);
+    await connection.commit();
+    res.json({ success: true, data: { hotelId, images: normalizedImages.length, amenities: normalizedAmenities.length, nearbyPlaces: normalizedPlaces.length } });
+  } catch (error) {
+    await connection.rollback();
+    next(error);
+  } finally { connection.release(); }
+}
+
 /* =========================
    ADMIN TAXI
 ========================= */
@@ -330,6 +432,8 @@ export async function adminTaxiRoutes(req, res, next) {
         fare,
         currency,
         estimated_minutes AS estimatedMinutes,
+        estimated_distance_km AS estimatedDistanceKm,
+        max_passengers AS maxPassengers,
         vehicle_type AS vehicleType,
         status
       FROM taxi_routes
@@ -342,6 +446,8 @@ export async function adminTaxiRoutes(req, res, next) {
         ...row,
         fare: Number(row.fare),
         estimatedMinutes: Number(row.estimatedMinutes),
+        estimatedDistanceKm: row.estimatedDistanceKm == null ? null : Number(row.estimatedDistanceKm),
+        maxPassengers: Number(row.maxPassengers),
       })),
     });
   } catch (error) {
@@ -349,29 +455,26 @@ export async function adminTaxiRoutes(req, res, next) {
   }
 }
 
+function validateTaxiRouteInput(body = {}) {
+  const pickupLocation = String(body.pickupLocation || "").trim();
+  const destination = String(body.destination || "").trim();
+  const fare = Number(body.fare);
+  const currency = String(body.currency || "NPR").trim().toUpperCase();
+  const estimatedMinutes = Number(body.estimatedMinutes || 30);
+  const estimatedDistanceKm = body.estimatedDistanceKm == null || body.estimatedDistanceKm === "" ? null : Number(body.estimatedDistanceKm);
+  const maxPassengers = Number(body.maxPassengers || 4);
+  if (!pickupLocation || pickupLocation.length > 180 || !destination || destination.length > 180) throw new HttpError(400, "Pickup and destination are required and must be under 180 characters.");
+  if (!Number.isFinite(fare) || fare < 0 || fare > 100000000) throw new HttpError(400, "Enter a valid non-negative fare.");
+  if (!/^[A-Z]{3}$/.test(currency)) throw new HttpError(400, "Currency must be a three-letter code.");
+  if (!Number.isSafeInteger(estimatedMinutes) || estimatedMinutes < 1 || estimatedMinutes > 1440) throw new HttpError(400, "Estimated duration must be 1 to 1440 minutes.");
+  if (estimatedDistanceKm != null && (!Number.isFinite(estimatedDistanceKm) || estimatedDistanceKm < 0 || estimatedDistanceKm > 10000)) throw new HttpError(400, "Enter a valid estimated distance.");
+  if (!Number.isSafeInteger(maxPassengers) || maxPassengers < 1 || maxPassengers > 20) throw new HttpError(400, "Vehicle capacity must be 1 to 20 passengers.");
+  return { pickupLocation, destination, description: String(body.description || "").trim().slice(0, 500), fare, currency, estimatedMinutes, estimatedDistanceKm, maxPassengers, vehicleType: String(body.vehicleType || "Standard Taxi").trim().slice(0, 100) || "Standard Taxi", status: body.status === "inactive" ? "inactive" : "active" };
+}
+
 export async function createAdminTaxiRoute(req, res, next) {
   try {
-    const {
-      pickupLocation,
-      destination,
-      description,
-      fare,
-      currency,
-      estimatedMinutes,
-      vehicleType,
-    } = req.body || {};
-
-    if (!String(pickupLocation || "").trim()) {
-      throw new HttpError(400, "Pickup location is required.");
-    }
-
-    if (!String(destination || "").trim()) {
-      throw new HttpError(400, "Destination is required.");
-    }
-
-    if (!Number.isFinite(Number(fare)) || Number(fare) < 0) {
-      throw new HttpError(400, "Enter a valid fare.");
-    }
+    const { pickupLocation, destination, description, fare, currency, estimatedMinutes, estimatedDistanceKm, maxPassengers, vehicleType } = validateTaxiRouteInput(req.body);
 
     const [result] = await pool.execute(
       `
@@ -383,21 +486,16 @@ export async function createAdminTaxiRoute(req, res, next) {
         fare,
         currency,
         estimated_minutes,
+        estimated_distance_km,
+        max_passengers,
         vehicle_type,
         status
       )
-      VALUES (?, ?, ?, ?, ?, ?, ?, 'active')
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'active')
       `,
       [
-        String(pickupLocation).trim(),
-        String(destination).trim(),
-        String(description || "").trim(),
-        Number(fare),
-        String(currency || "NPR")
-          .trim()
-          .toUpperCase(),
-        Number(estimatedMinutes || 30),
-        String(vehicleType || "Standard Taxi").trim(),
+        pickupLocation, destination, description, fare, currency,
+        estimatedMinutes, estimatedDistanceKm, maxPassengers, vehicleType,
       ],
     );
 
@@ -420,16 +518,7 @@ export async function updateAdminTaxiRoute(req, res, next) {
       throw new HttpError(400, "Invalid taxi route ID.");
     }
 
-    const {
-      pickupLocation,
-      destination,
-      description,
-      fare,
-      currency,
-      estimatedMinutes,
-      vehicleType,
-      status,
-    } = req.body || {};
+    const { pickupLocation, destination, description, fare, currency, estimatedMinutes, estimatedDistanceKm, maxPassengers, vehicleType, status } = validateTaxiRouteInput(req.body);
 
     const [result] = await pool.execute(
       `
@@ -441,21 +530,15 @@ export async function updateAdminTaxiRoute(req, res, next) {
         fare = ?,
         currency = ?,
         estimated_minutes = ?,
+        estimated_distance_km = ?,
+        max_passengers = ?,
         vehicle_type = ?,
         status = ?
       WHERE id = ?
       `,
       [
-        String(pickupLocation || "").trim(),
-        String(destination || "").trim(),
-        String(description || "").trim(),
-        Number(fare),
-        String(currency || "NPR")
-          .trim()
-          .toUpperCase(),
-        Number(estimatedMinutes || 30),
-        String(vehicleType || "Standard Taxi").trim(),
-        status === "inactive" ? "inactive" : "active",
+        pickupLocation, destination, description, fare, currency,
+        estimatedMinutes, estimatedDistanceKm, maxPassengers, vehicleType, status,
         id,
       ],
     );
@@ -513,6 +596,12 @@ export async function adminTaxiBookings(req, res, next) {
         tb.passengers,
         tb.fare,
         tb.currency,
+        tb.booking_reference AS bookingReference,
+        tb.payment_method AS paymentMethod,
+        tb.payment_status AS paymentStatus,
+        tb.driver_name AS driverName,
+        tb.driver_phone AS driverPhone,
+        tb.vehicle_number AS vehicleNumber,
         tb.status,
         tb.created_at AS createdAt
       FROM taxi_bookings tb
@@ -531,4 +620,23 @@ export async function adminTaxiBookings(req, res, next) {
   } catch (error) {
     next(error);
   }
+}
+
+export async function updateAdminTaxiBooking(req, res, next) {
+  try {
+    const id = Number(req.params.id);
+    const { status, driverName = null, driverPhone = null, vehicleNumber = null } = req.body || {};
+    const allowed = new Set(["PENDING", "CONFIRMED", "DRIVER_ASSIGNED", "DRIVER_ARRIVING", "ON_TRIP", "COMPLETED", "CANCELLED"]);
+    if (!Number.isSafeInteger(id) || id < 1) throw new HttpError(400, "Invalid taxi booking ID.");
+    if (!allowed.has(status)) throw new HttpError(400, "Invalid taxi booking status.");
+    if (status === "DRIVER_ASSIGNED" && (!String(driverName || "").trim() || !String(driverPhone || "").trim() || !String(vehicleNumber || "").trim())) {
+      throw new HttpError(400, "Driver name, phone and vehicle number are required when assigning a driver.");
+    }
+    const [result] = await pool.execute(
+      `UPDATE taxi_bookings SET status = ?, driver_name = ?, driver_phone = ?, vehicle_number = ? WHERE id = ?`,
+      [status, String(driverName || "").trim() || null, String(driverPhone || "").trim() || null, String(vehicleNumber || "").trim() || null, id],
+    );
+    if (!result.affectedRows) throw new HttpError(404, "Taxi booking not found.");
+    res.json({ success: true, data: { id, status } });
+  } catch (error) { next(error); }
 }

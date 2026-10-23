@@ -25,6 +25,14 @@ const User = {
     );
     return rows;
   },
+  async createCustomer({ fullName, email, passwordHash }) {
+    const [result] = await pool.execute(
+      `INSERT INTO users (full_name, email, password_hash, role, account_status)
+       VALUES (?, ?, ?, 'customer', 'active')`,
+      [fullName, email, passwordHash],
+    );
+    return result.insertId;
+  },
 };
 
 export default User;

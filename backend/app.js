@@ -7,6 +7,7 @@ import bookingRoutes from "./routes/bookingRoutes.js";
 import adminRoutes from "./routes/adminRoutes.js";
 import pool from "./db.js";
 import travelRoutes from "./routes/travelRoutes.js";
+import customerRoutes from "./routes/customerRoutes.js";
 const app = express();
 
 const allowedOrigins = (process.env.FRONTEND_URL || "http://localhost:5173")
@@ -52,6 +53,7 @@ app.use("/api/airports", airportRoutes);
 app.use("/api/flights", flightRoutes);
 app.use("/api/bookings", bookingRoutes);
 app.use("/api/admin", adminRoutes);
+app.use("/api/customer", customerRoutes);
 app.use("/api", travelRoutes);
 
 

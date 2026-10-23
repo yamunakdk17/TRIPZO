@@ -19,6 +19,8 @@ export function createAdminToken(user) {
   return `${data}.${signature}`;
 }
 
+export const createSessionToken = createAdminToken;
+
 export function verifyAdminToken(token) {
   const parts = String(token || "").split(".");
   if (parts.length !== 3) throw new HttpError(401, "A valid admin session is required.");

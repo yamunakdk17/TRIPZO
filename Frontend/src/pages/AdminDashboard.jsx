@@ -45,8 +45,9 @@ const navigation = [
   { id: "payments", label: "Payments", icon: CreditCard },
   { id: "audit", label: "Audit Logs", icon: FileText },
   { id: "settings", label: "Settings", icon: Settings },
-   { id: "taxi", label: "Taxi Management", icon: Car },
-  { id: "users", label: "Users", icon: Users },
+  { id: "taxi", label: "Taxi Routes", icon: Car },
+  { id: "taxi_bookings", label: "Taxi Bookings", icon: Ticket },
+  { id: "hotel_reservations", label: "Hotel Reservations", icon: Hotel },
 
 ];
 
@@ -103,8 +104,6 @@ export default function AdminDashboard() {
   const [error, setError] = useState("");
   const [success, setSuccess] = useState("");
   const [sidebarOpen, setSidebarOpen] = useState(false);
-  const [hotels, setHotels] = useState([]);
-  const [taxiRoutes, setTaxiRoutes] = useState([]);
 
   async function loadFlights(currentToken = token) {
     const result = await request("/admin/flights", currentToken);
@@ -129,15 +128,11 @@ export default function AdminDashboard() {
           request("/admin/dashboard", token),
           request("/admin/airlines", token),
           request("/admin/airports", token),
-          request("/admin/hotels", token),
-          request("/admin/taxi/routes", token),
         ]);
       setFlights(flightResult.data || []);
       setStats(dashboardResult.data || {});
       setAirlines(airlineResult.data || []);
       setAirports(airportResult.data || []);
-      setHotels(hotelResult.data || []);
-      setTaxiRoutes(taxiResult.data || []);
     } catch (err) {
       setError(err.message);
       if (err.message.toLowerCase().includes("session") || err.message.toLowerCase().includes("sign in")) {
@@ -625,7 +620,7 @@ export default function AdminDashboard() {
             </>
           )}
 
-          {["airlines", "fares", "bookings", "airports", "hotels", "users", "payments", "audit", "settings"].includes(activePage) && (
+          {["airlines", "fares", "bookings", "airports", "hotels", "users", "payments", "audit", "settings", "taxi", "taxi_bookings", "hotel_reservations"].includes(activePage) && (
             <AdminResourcePage page={activePage} token={token} />
           )}
 
@@ -633,7 +628,7 @@ export default function AdminDashboard() {
             <p className="mt-4 rounded-xl border border-dashed border-slate-300 bg-white p-6 text-center text-slate-500">No scheduled flights are currently in the database.</p>
           )}
 
-          {activePage !== "overview" && activePage !== "flights" && activePage !== "bookings" && activePage !== "users" && activePage !== "airports" && activePage !== "hotels" && (
+          {activePage !== "overview" && activePage !== "flights" && activePage !== "bookings" && activePage !== "users" && activePage !== "airports" && activePage !== "hotels" && activePage !== "taxi" && activePage !== "taxi_bookings" && activePage !== "hotel_reservations" && (
             <div className="bg-white border border-slate-200 rounded-2xl p-8 sm:p-12 text-center">
               {(() => {
                 const item = navigation.find((nav) => nav.id === activePage);

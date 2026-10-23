@@ -15,13 +15,18 @@ const previousAdminSecret = process.env.ADMIN_JWT_SECRET;
 const suffix = randomUUID();
 const testAdminEmail = `admin-${suffix}@example.invalid`;
 const testUserEmail = `user-${suffix}@example.invalid`;
+const customerEmail = `travel-customer-${suffix}@example.invalid`;
 let testAdminId = null;
 let testUserId = null;
+let testCustomerId = null;
 let adminCreatedFlightId = null;
 let adminCreatedAirlineId = null;
 let adminCreatedAirportIds = [];
 let adminCreatedHotelId = null;
 let adminCreatedRoomId = null;
+let adminCreatedTaxiRouteId = null;
+let hotelReservationReference = null;
+let taxiBookingReference = null;
 let adminCreatedFareId = null;
 
 const request = async (baseUrl, path, options = {}) => {
@@ -57,6 +62,9 @@ try {
 
   const adminAuthToken = createAdminToken({ id: testAdminId });
   const adminHeaders = { Authorization: `Bearer ${adminAuthToken}` };
+  const customerRegistration=await request(baseUrl,"/api/customer/register",{method:"POST",body:JSON.stringify({fullName:"Travel Smoke Customer",email:customerEmail,password:"TravelSmoke-Password-123!"})});assert.equal(customerRegistration.status,201);testCustomerId=customerRegistration.body.user.id;const customerHeaders={Authorization:`Bearer ${customerRegistration.body.token}`};
+  const customerLogin=await request(baseUrl,"/api/customer/login",{method:"POST",body:JSON.stringify({email:customerEmail,password:"TravelSmoke-Password-123!"})});assert.equal(customerLogin.status,200);assert.equal(customerLogin.body.user.role,"customer");
+  const customerHistoryUnauthorized=await request(baseUrl,"/api/customer/bookings");assert.equal(customerHistoryUnauthorized.status,401);
   const airlineCode = suffix.replaceAll("-", "").slice(0, 2).toUpperCase();
   const airportCodeA = suffix.replaceAll("-", "").slice(0, 3).toUpperCase();
   const airportCodeB = suffix.replaceAll("-", "").slice(3, 6).toUpperCase();
@@ -68,6 +76,21 @@ try {
   const createdHotel=await request(baseUrl,"/api/admin/hotels",{method:"POST",headers:adminHeaders,body:JSON.stringify({name:"Smoke Test Hotel",address:"1 Test Road",city:"Test City",country:"Nepal",countryCode:"NP",starRating:3})});assert.equal(createdHotel.status,201);adminCreatedHotelId=createdHotel.body.data.id;
   const createdRoom=await request(baseUrl,`/api/admin/hotels/${adminCreatedHotelId}/rooms`,{method:"POST",headers:adminHeaders,body:JSON.stringify({roomName:"Test Room",roomType:"Standard",capacity:2,pricePerNight:1200,totalRooms:2,availableRooms:2,currency:"NPR"})});assert.equal(createdRoom.status,201);adminCreatedRoomId=createdRoom.body.data.id;
   const updatedRoom=await request(baseUrl,`/api/admin/hotels/${adminCreatedHotelId}/rooms/${adminCreatedRoomId}`,{method:"PUT",headers:adminHeaders,body:JSON.stringify({roomName:"Test Room Updated",roomType:"Standard",capacity:2,pricePerNight:1300,totalRooms:2,availableRooms:2,currency:"NPR"})});assert.equal(updatedRoom.status,200);
+
+  const hotelContent=await request(baseUrl,`/api/admin/hotels/${adminCreatedHotelId}/content`,{method:"PUT",headers:adminHeaders,body:JSON.stringify({images:[{imageUrl:"https://example.invalid/test-hotel.jpg",altText:"Test hotel",isPrimary:true}],amenities:["Smoke test Wi-Fi"],nearbyPlaces:[{name:"Test attraction",category:"Attraction",distanceKm:1.2,estimatedMinutes:10}]})});assert.equal(hotelContent.status,200);
+  const savedHotelContent=await request(baseUrl,`/api/admin/hotels/${adminCreatedHotelId}/content`,{headers:adminHeaders});assert.equal(savedHotelContent.status,200);assert.equal(savedHotelContent.body.data.images.length,1);assert.equal(savedHotelContent.body.data.amenities[0].name,"Smoke test Wi-Fi");
+  const checkInDate=new Date();checkInDate.setDate(checkInDate.getDate()+15);const checkOutDate=new Date(checkInDate);checkOutDate.setDate(checkOutDate.getDate()+2);const dateOnly=value=>value.toISOString().slice(0,10);const hotelCheckIn=dateOnly(checkInDate),hotelCheckOut=dateOnly(checkOutDate);
+  const hotelBooking=await request(baseUrl,"/api/hotels/reservations",{method:"POST",headers:customerHeaders,body:JSON.stringify({hotelId:adminCreatedHotelId,roomId:adminCreatedRoomId,guestName:"Smoke Guest",guestEmail:"guest@example.invalid",guestPhone:"+9779800000000",checkIn:hotelCheckIn,checkOut:hotelCheckOut,guests:2,rooms:1,paymentMethod:"cash"})});assert.equal(hotelBooking.status,201);hotelReservationReference=hotelBooking.body.data.bookingReference;assert.equal(hotelBooking.body.data.status,"CONFIRMED");assert.equal(hotelBooking.body.data.paymentStatus,"PENDING");assert.equal(hotelBooking.body.data.totalAmount,2600);
+  const roomAvailability=await request(baseUrl,`/api/hotels/${adminCreatedHotelId}/availability?checkIn=${hotelCheckIn}&checkOut=${hotelCheckOut}&guests=2&rooms=2`);assert.equal(roomAvailability.status,200);assert.equal(roomAvailability.body.data.length,0,"date-aware inventory prevents overbooking");
+  const hotelLookup=await request(baseUrl,`/api/hotels/reservations/${hotelReservationReference}`);assert.equal(hotelLookup.status,200);assert.equal(hotelLookup.body.data.guestName,"Smoke Guest");
+  const hotelCancel=await request(baseUrl,`/api/hotels/reservations/${hotelReservationReference}/cancel`,{method:"PUT"});assert.equal(hotelCancel.status,200);hotelReservationReference=null;
+  const taxiRoute=await request(baseUrl,"/api/admin/taxi/routes",{method:"POST",headers:adminHeaders,body:JSON.stringify({pickupLocation:"Smoke pickup",destination:"Smoke destination",description:"Temporary test route",fare:800,currency:"NPR",estimatedMinutes:25,estimatedDistanceKm:8.5,maxPassengers:3,vehicleType:"Test sedan"})});assert.equal(taxiRoute.status,201);adminCreatedTaxiRouteId=taxiRoute.body.data.id;
+  const publicTaxiRoutes=await request(baseUrl,"/api/taxis/routes");assert.equal(publicTaxiRoutes.status,200);assert.ok(publicTaxiRoutes.body.data.some(route=>route.id===adminCreatedTaxiRouteId));
+  const taxiDate=new Date();taxiDate.setDate(taxiDate.getDate()+2);const taxiBooking=await request(baseUrl,"/api/taxis/bookings",{method:"POST",headers:customerHeaders,body:JSON.stringify({routeId:adminCreatedTaxiRouteId,customerName:"Smoke Taxi Guest",customerPhone:"+9779800000000",pickupDate:dateOnly(taxiDate),pickupTime:"09:30",passengers:2,paymentMethod:"cash"})});assert.equal(taxiBooking.status,201);taxiBookingReference=taxiBooking.body.data.bookingReference;assert.equal(taxiBooking.body.data.status,"CONFIRMED");assert.equal(taxiBooking.body.data.paymentStatus,"PENDING");
+  const taxiLookup=await request(baseUrl,`/api/taxis/bookings/${taxiBookingReference}`);assert.equal(taxiLookup.status,200);assert.equal(taxiLookup.body.data.fare,800);
+  const taxiAssigned=await request(baseUrl,`/api/admin/taxi/bookings/${taxiBooking.body.data.bookingId}`,{method:"PUT",headers:adminHeaders,body:JSON.stringify({status:"DRIVER_ASSIGNED",driverName:"Test Driver",driverPhone:"+9779800000001",vehicleNumber:"TEST-01"})});assert.equal(taxiAssigned.status,200);
+  const taxiWithDriver=await request(baseUrl,`/api/taxis/bookings/${taxiBookingReference}`);assert.equal(taxiWithDriver.body.data.driverName,"Test Driver");
+  const customerHistory=await request(baseUrl,"/api/customer/bookings",{headers:customerHeaders});assert.equal(customerHistory.status,200);assert.equal(customerHistory.body.data.length,2,"customer only sees its linked hotel and taxi bookings");
 
   const unauthorizedAdmin = await request(baseUrl, "/api/admin/dashboard");
   assert.equal(unauthorizedAdmin.status, 401, "admin endpoints reject missing credentials");
@@ -107,15 +130,19 @@ try {
   assert.equal(adminLogin.status, 200, "admin login verifies the database role and password");
   assert.equal(adminLogin.body.user.role, "admin");
   const loginAdminHeaders = { Authorization: `Bearer ${adminLogin.body.token}` };
-  const [adminDashboard, adminFlights, adminBookings, adminAirlines, adminAirports, adminUsers] = await Promise.all([
+  const [adminDashboard, adminFlights, adminBookings, adminAirlines, adminAirports, adminUsers, adminHotels, adminTaxiRoutes, adminTaxiBookings, adminHotelReservations] = await Promise.all([
     request(baseUrl, "/api/admin/dashboard", { headers: loginAdminHeaders }),
     request(baseUrl, "/api/admin/flights", { headers: loginAdminHeaders }),
     request(baseUrl, "/api/admin/bookings", { headers: loginAdminHeaders }),
     request(baseUrl, "/api/admin/airlines", { headers: loginAdminHeaders }),
     request(baseUrl, "/api/admin/airports", { headers: loginAdminHeaders }),
     request(baseUrl, "/api/admin/users", { headers: loginAdminHeaders }),
+    request(baseUrl, "/api/admin/hotels", { headers: loginAdminHeaders }),
+    request(baseUrl, "/api/admin/taxi/routes", { headers: loginAdminHeaders }),
+    request(baseUrl, "/api/admin/taxi/bookings", { headers: loginAdminHeaders }),
+    request(baseUrl, "/api/admin/hotel-reservations", { headers: loginAdminHeaders }),
   ]);
-  for (const result of [adminDashboard, adminFlights, adminBookings, adminAirlines, adminAirports, adminUsers]) assert.equal(result.status, 200);
+  for (const result of [adminDashboard, adminFlights, adminBookings, adminAirlines, adminAirports, adminUsers, adminHotels, adminTaxiRoutes, adminTaxiBookings, adminHotelReservations]) assert.equal(result.status, 200);
   assert.ok(adminDashboard.body.data.flights > 0);
   assert.ok(adminFlights.body.data.length > 0);
   assert.ok(adminAirports.body.data.length > 0);
@@ -166,6 +193,11 @@ try {
   const airports = await request(baseUrl, "/api/airports");
   assert.equal(airports.status, 200);
   assert.equal(airports.body.data.length, 11);
+
+  const hotels = await request(baseUrl, "/api/hotels");
+  assert.equal(hotels.status, 200, "public hotel endpoint is mounted");
+  const taxiRoutes = await request(baseUrl, "/api/taxis/routes");
+  assert.equal(taxiRoutes.status, 200, "public taxi routes endpoint is mounted");
 
   const searchPath =
     "/api/flights/search?from=KTM&to=DHI&date=2026-11-20";
@@ -295,7 +327,7 @@ try {
   assert.equal(Number(persisted[0].passengers), 1);
   assert.equal(Number(persisted[0].payments), 1);
 
-  console.log("Smoke checks passed: DB, search, admin login/dashboard, role/status authorization and user management, admin inventory CRUD, booking status, validation, provider guard, booking, idempotency, demo payment, persistence.");
+  console.log("Smoke checks passed: database, search, admin login/dashboard and role checks, hotel/room/media/facility/nearby CRUD, date-aware hotel booking and cancellation, taxi route/booking/status/driver flow, flight booking, idempotency and demo payment.");
 } catch (error) {
   console.error("Smoke check failed:", error.message);
   process.exitCode = 1;
@@ -305,7 +337,7 @@ try {
   if (previousAdminSecret === undefined) delete process.env.ADMIN_JWT_SECRET;
   else process.env.ADMIN_JWT_SECRET = previousAdminSecret;
 
-  for (const userId of [testAdminId, testUserId]) {
+  for (const userId of [testAdminId, testUserId, testCustomerId]) {
     if (userId) {
       try {
         await pool.execute("DELETE FROM admin_audit_logs WHERE admin_user_id = ?", [userId]);
@@ -322,7 +354,8 @@ try {
   }
   if (adminCreatedAirlineId) { try { await pool.execute("DELETE FROM airlines WHERE id=?",[adminCreatedAirlineId]); } catch(e) { console.error("Could not clean smoke airline:",e.code||e.name);process.exitCode=1; } }
   for(const id of adminCreatedAirportIds){try{await pool.execute("UPDATE airports SET is_active=TRUE WHERE id=?",[id]);await pool.execute("DELETE FROM airports WHERE id=?",[id]);}catch(e){console.error("Could not clean smoke airport:",e.code||e.name);process.exitCode=1;}}
-  if(adminCreatedHotelId){try{await pool.execute("DELETE FROM hotel_rooms WHERE hotel_id=?",[adminCreatedHotelId]);await pool.execute("DELETE FROM hotels WHERE id=?",[adminCreatedHotelId]);}catch(e){console.error("Could not clean smoke hotel:",e.code||e.name);process.exitCode=1;}}
+  if(adminCreatedHotelId){try{await pool.execute("DELETE FROM hotel_reservations WHERE hotel_id=?",[adminCreatedHotelId]);await pool.execute("DELETE FROM hotel_rooms WHERE hotel_id=?",[adminCreatedHotelId]);await pool.execute("DELETE FROM hotel_images WHERE hotel_id=?",[adminCreatedHotelId]);await pool.execute("DELETE FROM hotel_amenities WHERE hotel_id=?",[adminCreatedHotelId]);await pool.execute("DELETE FROM hotel_nearby_places WHERE hotel_id=?",[adminCreatedHotelId]);await pool.execute("DELETE FROM hotels WHERE id=?",[adminCreatedHotelId]);}catch(e){console.error("Could not clean smoke hotel:",e.code||e.name);process.exitCode=1;}}
+  if(adminCreatedTaxiRouteId){try{await pool.execute("DELETE FROM taxi_bookings WHERE route_id=?",[adminCreatedTaxiRouteId]);await pool.execute("DELETE FROM taxi_routes WHERE id=?",[adminCreatedTaxiRouteId]);}catch(e){console.error("Could not clean smoke taxi route:",e.code||e.name);process.exitCode=1;}}
 
   if (bookingReference) {
     const connection = await pool.getConnection();
