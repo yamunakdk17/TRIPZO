@@ -21,7 +21,13 @@ import {
   CheckCircle2,
   AlertCircle,
   LoaderCircle,
+  CreditCard,
+  BadgeDollarSign,
+  FileText,
+  Car,
 } from "lucide-react";
+import AdminResourcePage from "./AdminResourcePage.jsx";
+import { adminLogout } from "../services/adminApi.js";
 
 const API_URL = (
   import.meta.env.VITE_API_URL || "http://localhost:5000/api"
@@ -30,10 +36,18 @@ const API_URL = (
 const navigation = [
   { id: "overview", label: "Overview", icon: LayoutDashboard },
   { id: "flights", label: "Flight Management", icon: Plane },
+  { id: "airlines", label: "Airlines", icon: Plane },
+  { id: "fares", label: "Fares", icon: BadgeDollarSign },
   { id: "bookings", label: "Bookings", icon: Ticket },
   { id: "airports", label: "Airports", icon: MapPin },
   { id: "hotels", label: "Hotels", icon: Hotel },
   { id: "users", label: "Users", icon: Users },
+  { id: "payments", label: "Payments", icon: CreditCard },
+  { id: "audit", label: "Audit Logs", icon: FileText },
+  { id: "settings", label: "Settings", icon: Settings },
+   { id: "taxi", label: "Taxi Management", icon: Car },
+  { id: "users", label: "Users", icon: Users },
+
 ];
 
 const emptyFlight = {
@@ -45,6 +59,9 @@ const emptyFlight = {
   arrivalAt: "",
   price: "",
   currency: "NPR",
+  scheduleStatus: "scheduled",
+  fareType: "base_fare",
+  operatingDays: [],
 };
 
 async function request(endpoint, token, options = {}) {
@@ -76,17 +93,18 @@ export default function AdminDashboard() {
   const [stats, setStats] = useState(null);
   const [airlines, setAirlines] = useState([]);
   const [airports, setAirports] = useState([]);
-  const [bookings, setBookings] = useState([]);
-  const [users, setUsers] = useState([]);
   const [flightForm, setFlightForm] = useState(emptyFlight);
   const [editingId, setEditingId] = useState(null);
   const [showForm, setShowForm] = useState(false);
   const [search, setSearch] = useState("");
+  const [flightPage, setFlightPage] = useState(1);
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
   const [success, setSuccess] = useState("");
   const [sidebarOpen, setSidebarOpen] = useState(false);
+  const [hotels, setHotels] = useState([]);
+  const [taxiRoutes, setTaxiRoutes] = useState([]);
 
   async function loadFlights(currentToken = token) {
     const result = await request("/admin/flights", currentToken);
@@ -105,29 +123,27 @@ export default function AdminDashboard() {
     setError("");
 
     try {
-      const [flightResult, dashboardResult, airlineResult, airportResult, bookingResult, userResult] =
+      const [flightResult, dashboardResult, airlineResult, airportResult] =
         await Promise.all([
           request("/admin/flights", token),
           request("/admin/dashboard", token),
           request("/admin/airlines", token),
           request("/admin/airports", token),
-          request("/admin/bookings", token),
-          request("/admin/users", token),
+          request("/admin/hotels", token),
+          request("/admin/taxi/routes", token),
         ]);
       setFlights(flightResult.data || []);
       setStats(dashboardResult.data || {});
       setAirlines(airlineResult.data || []);
       setAirports(airportResult.data || []);
-      setBookings(bookingResult.data || []);
-      setUsers(userResult.data || []);
+      setHotels(hotelResult.data || []);
+      setTaxiRoutes(taxiResult.data || []);
     } catch (err) {
       setError(err.message);
       if (err.message.toLowerCase().includes("session") || err.message.toLowerCase().includes("sign in")) {
         sessionStorage.removeItem("tripzo_admin_token");
         setToken("");
         setFlights([]);
-        setBookings([]);
-        setUsers([]);
         setStats(null);
         setSuccess("");
       }
@@ -167,12 +183,11 @@ export default function AdminDashboard() {
     }
   }
 
-  function logout() {
+  async function logout() {
+    try { await adminLogout(token); } catch { /* Clear the local session even if the API is offline. */ }
     sessionStorage.removeItem("tripzo_admin_token");
     setToken("");
     setFlights([]);
-    setBookings([]);
-    setUsers([]);
     setStats(null);
     setError("");
     setSuccess("");
@@ -196,6 +211,13 @@ export default function AdminDashboard() {
       arrivalAt: flight.arrivalAt ? flight.arrivalAt.slice(0, 16) : "",
       price: String(flight.price ?? ""),
       currency: flight.currency || "NPR",
+      scheduleStatus: flight.scheduleStatus || "scheduled",
+      fareType: flight.fareType || "base_fare",
+      operatingDays: Array.isArray(flight.operatingDays)
+        ? flight.operatingDays
+        : typeof flight.operatingDays === "string"
+          ? JSON.parse(flight.operatingDays || "[]")
+          : [],
     });
     setError("");
     setShowForm(true);
@@ -258,6 +280,8 @@ export default function AdminDashboard() {
       .toLowerCase()
       .includes(search.toLowerCase()),
   );
+  const pageSize = 15;
+  const pageFlights = filteredFlights.slice((flightPage - 1) * pageSize, flightPage * pageSize);
 
   const money = (value, currency = "NPR") =>
     `${currency} ${Number(value || 0).toLocaleString()}`;
@@ -495,7 +519,7 @@ export default function AdminDashboard() {
                     icon: Users,
                   },
                   {
-                    label: "Revenue",
+                    label: "Demo payment total",
                     value:
                       stats?.revenue != null
                         ? money(stats.revenue, stats.currency || "NPR")
@@ -539,6 +563,12 @@ export default function AdminDashboard() {
                   onDelete={deleteFlight}
                 />
               </div>
+              {stats && <div className="mt-5 grid gap-4 lg:grid-cols-2">
+                <section className="rounded-2xl border bg-white p-5"><h3 className="font-black">Recent bookings</h3>{stats.recentBookings?.length?<div className="mt-3 space-y-2">{stats.recentBookings.map(b=><p key={b.reference} className="flex justify-between gap-3 text-sm"><span>{b.reference} · {b.status}</span><span>{b.currency} {Number(b.totalAmount).toLocaleString()}</span></p>)}</div>:<p className="mt-3 text-sm text-slate-500">No bookings yet.</p>}</section>
+                <section className="rounded-2xl border bg-white p-5"><h3 className="font-black">Upcoming flights</h3>{stats.upcomingFlights?.length?<div className="mt-3 space-y-2">{stats.upcomingFlights.map(f=><p key={f.id} className="flex justify-between gap-3 text-sm"><span>{f.flightNumber} · {f.fromCode} → {f.toCode}</span><span>{new Date(f.departureAt).toLocaleString()}</span></p>)}</div>:<p className="mt-3 text-sm text-slate-500">No upcoming flights.</p>}</section>
+                <section className="rounded-2xl border bg-white p-5"><h3 className="font-black">Popular routes</h3>{stats.popularRoutes?.length?<div className="mt-3 space-y-2">{stats.popularRoutes.map(r=><p key={`${r.fromCode}-${r.toCode}`} className="text-sm">{r.fromCode} → {r.toCode} · {r.bookings} bookings</p>)}</div>:<p className="mt-3 text-sm text-slate-500">No route bookings yet.</p>}</section>
+                <section className="rounded-2xl border bg-white p-5"><h3 className="font-black">Recent users</h3>{stats.recentUsers?.length?<div className="mt-3 space-y-2">{stats.recentUsers.map(u=><p key={u.id} className="flex justify-between gap-3 text-sm"><span>{u.fullName} · {u.email}</span><span>{u.role}</span></p>)}</div>:<p className="mt-3 text-sm text-slate-500">No users yet.</p>}</section>
+              </div>}
             </>
           )}
 
@@ -586,41 +616,17 @@ export default function AdminDashboard() {
                 </div>
 
                 <FlightTable
-                  flights={filteredFlights}
+                  flights={pageFlights}
                   onEdit={startEditFlight}
                   onDelete={deleteFlight}
                 />
+                <div className="flex items-center justify-between border-t p-4 text-sm"><span>Page {flightPage} of {Math.max(1,Math.ceil(filteredFlights.length/pageSize))}</span><div className="flex gap-2"><button disabled={flightPage<=1} onClick={()=>setFlightPage(p=>Math.max(1,p-1))} className="rounded border px-3 py-1 disabled:opacity-40">Previous</button><button disabled={flightPage>=Math.ceil(filteredFlights.length/pageSize)} onClick={()=>setFlightPage(p=>p+1)} className="rounded border px-3 py-1 disabled:opacity-40">Next</button></div></div>
               </div>
             </>
           )}
 
-          {activePage === "bookings" && (
-            <DataTable title="Bookings" rows={bookings} columns={[
-              ["Reference", "reference"], ["Status", "status"], ["Route", "route"],
-              ["Flight", "flightNumber"], ["Travel date", "travelDate"],
-              ["Payment", "paymentStatus"], ["Total", "total"],
-            ]} empty="No bookings are in the database yet." />
-          )}
-
-          {activePage === "users" && (
-            <DataTable title="Registered users" rows={users} columns={[
-              ["Name", "fullName"], ["Email", "email"], ["Role", "role"],
-              ["Status", "accountStatus"], ["Created", "createdAt"],
-            ]} empty="No user accounts are in the database yet." />
-          )}
-
-          {activePage === "airports" && (
-            <DataTable title="Airports" rows={airports} columns={[
-              ["Airport", "name"], ["City", "city"], ["Code", "code"], ["Country", "countryCode"],
-            ]} empty="No active airports are configured." />
-          )}
-
-          {activePage === "hotels" && (
-            <div className="bg-white border border-slate-200 rounded-2xl p-8 sm:p-12 text-center">
-              <Hotel size={30} className="mx-auto text-[#327D81]" />
-              <h2 className="text-2xl font-black mt-5">Hotels</h2>
-              <p className="text-slate-500 mt-2">Hotel management is unavailable because this project has no hotels table or hotel API.</p>
-            </div>
+          {["airlines", "fares", "bookings", "airports", "hotels", "users", "payments", "audit", "settings"].includes(activePage) && (
+            <AdminResourcePage page={activePage} token={token} />
           )}
 
           {activePage === "overview" && flights.length === 0 && !loading && !error && (
@@ -691,7 +697,7 @@ export default function AdminDashboard() {
                   <option value="">Select airline</option>
                   {airlines.map((airline) => (
                     <option key={airline.id} value={airline.id}>
-                      {airline.airline_name || airline.name}
+                      {airline.airline_name || airline.name || airline.code}
                     </option>
                   ))}
                 </select>
@@ -727,7 +733,7 @@ export default function AdminDashboard() {
                   <option value="">Select departure airport</option>
                   {airports.map((airport) => (
                     <option key={airport.id} value={airport.id}>
-                      {airport.iata_code || airport.iata} —{" "}
+                      {airport.iata_code || airport.iata || airport.code} —{" "}
                       {airport.city || airport.airport_name}
                     </option>
                   ))}
@@ -749,7 +755,7 @@ export default function AdminDashboard() {
                   <option value="">Select arrival airport</option>
                   {airports.map((airport) => (
                     <option key={airport.id} value={airport.id}>
-                      {airport.iata_code || airport.iata} —{" "}
+                      {airport.iata_code || airport.iata || airport.code} —{" "}
                       {airport.city || airport.airport_name}
                     </option>
                   ))}
@@ -819,6 +825,14 @@ export default function AdminDashboard() {
                   <option value="USD">USD — US Dollar</option>
                 </select>
               </Field>
+
+              <Field label="Schedule status" icon={CheckCircle2}>
+                <select value={flightForm.scheduleStatus} onChange={e=>setFlightForm({...flightForm,scheduleStatus:e.target.value})} className="admin-input"><option value="scheduled">Scheduled</option><option value="cancelled">Cancelled</option><option value="completed">Completed</option></select>
+              </Field>
+              <Field label="Fare type" icon={Ticket}>
+                <input value={flightForm.fareType} onChange={e=>setFlightForm({...flightForm,fareType:e.target.value})} className="admin-input" required maxLength={50}/>
+              </Field>
+              <fieldset className="sm:col-span-2"><legend className="mb-2 text-sm font-semibold">Operating days</legend><div className="flex flex-wrap gap-3">{['Monday','Tuesday','Wednesday','Thursday','Friday','Saturday','Sunday'].map(day=><label key={day} className="flex items-center gap-1 text-sm"><input type="checkbox" checked={flightForm.operatingDays.includes(day)} onChange={e=>setFlightForm({...flightForm,operatingDays:e.target.checked?[...flightForm.operatingDays,day]:flightForm.operatingDays.filter(d=>d!==day)})}/>{day}</label>)}</div><p className="mt-1 text-xs text-slate-500">Leave empty to use the departure date’s weekday.</p></fieldset>
             </div>
 
             <div className="p-5 sm:p-6 border-t flex justify-end gap-3">
@@ -872,28 +886,6 @@ function Field({ label, icon: Icon, children }) {
       </span>
       {children}
     </label>
-  );
-}
-
-function DataTable({ title, rows, columns, empty }) {
-  const valueFor = (row, key) => {
-    if (key === "route") return [row.fromCode, row.toCode].filter(Boolean).join(" → ") || "—";
-    if (key === "total") return `${row.currency || "NPR"} ${Number(row.totalAmount || 0).toLocaleString()}`;
-    const value = row[key];
-    if (value == null || value === "") return "—";
-    if (key === "createdAt" || key === "travelDate") return new Date(value).toLocaleString();
-    return String(value);
-  };
-  return (
-    <section className="overflow-hidden rounded-2xl border border-slate-200 bg-white">
-      <div className="border-b border-slate-100 p-5"><h2 className="text-xl font-black">{title}</h2><p className="mt-1 text-sm text-slate-500">{rows.length} records</p></div>
-      {!rows.length ? <p className="p-10 text-center text-slate-500">{empty}</p> : (
-        <div className="overflow-x-auto"><table className="w-full text-left text-sm">
-          <thead className="bg-slate-50 text-xs uppercase text-slate-500"><tr>{columns.map(([label]) => <th className="px-5 py-3" key={label}>{label}</th>)}</tr></thead>
-          <tbody className="divide-y divide-slate-100">{rows.map((row, index) => <tr key={row.id || row.reference || row.email || index}>{columns.map(([, key]) => <td className="whitespace-nowrap px-5 py-3" key={key}>{valueFor(row, key)}</td>)}</tr>)}</tbody>
-        </table></div>
-      )}
-    </section>
   );
 }
 

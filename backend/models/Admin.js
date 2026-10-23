@@ -15,6 +15,9 @@ const mapFlight = (row) => ({
   price: row.price == null ? null : Number(row.price),
   currency: row.currency || "NPR",
   fareStatus: row.fareStatus || null,
+  scheduleStatus: row.scheduleStatus,
+  operatingDays: row.operatingDays,
+  fareType: row.fareType || "base_fare",
 });
 
 const Admin = {
@@ -32,12 +35,15 @@ const Admin = {
     const [rows] = await pool.execute(
       `SELECT fs.id, fs.airline_id AS airlineId, al.airline_name AS airline,
               fs.flight_number AS flightNumber,
+              fs.schedule_status AS scheduleStatus,
+              fs.operating_days AS operatingDays,
               fs.departure_airport_id AS departureAirportId,
               fs.arrival_airport_id AS arrivalAirportId,
               dep.iata_code AS fromCode, arr.iata_code AS toCode,
               DATE_FORMAT(fs.departure_at, '%Y-%m-%dT%H:%i:%s') AS departureAt,
               DATE_FORMAT(fs.arrival_at, '%Y-%m-%dT%H:%i:%s') AS arrivalAt,
               f.amount AS price, f.currency, f.fare_status AS fareStatus
+              , f.fare_type AS fareType
        FROM flight_schedules fs
        JOIN airlines al ON al.id = fs.airline_id
        JOIN airports dep ON dep.id = fs.departure_airport_id
@@ -48,10 +54,16 @@ const Admin = {
            AND f2.fare_status IN ('published', 'unverified')
          ORDER BY (f2.fare_status = 'published') DESC, f2.amount ASC, f2.id ASC LIMIT 1
        )
-       WHERE fs.schedule_status = 'scheduled'
        ORDER BY fs.departure_at DESC LIMIT 500`,
     );
     return rows.map(mapFlight);
+  },
+
+  async flight(id) {
+    const rows = await this.flights();
+    const flight = rows.find((row) => Number(row.id) === Number(id));
+    if (!flight) throw new HttpError(404, "Flight schedule not found.");
+    return flight;
   },
 
   async airlines() {
@@ -103,7 +115,11 @@ const Admin = {
     const arrival = localDateTime(input.arrivalAt);
     const flightNumber = String(input.flightNumber || "").trim().toUpperCase();
     const currency = String(input.currency || "NPR").trim().toUpperCase();
-    if (![airlineId, departureAirportId, arrivalAirportId].every(Number.isSafeInteger) || departureAirportId === arrivalAirportId || !flightNumber || flightNumber.length > 15 || !Number.isFinite(price) || price < 0 || price > 99999999 || !/^[A-Z]{3}$/.test(currency) || !departure || !arrival || arrival <= departure) {
+    const scheduleStatus = String(input.scheduleStatus || "scheduled");
+    const validDays = ["Monday","Tuesday","Wednesday","Thursday","Friday","Saturday","Sunday"];
+    const operatingDays = Array.isArray(input.operatingDays) && input.operatingDays.length ? [...new Set(input.operatingDays)] : [new Date(`${departure?.slice(0,10)}T00:00:00Z`).toLocaleDateString("en-US",{weekday:"long",timeZone:"UTC"})];
+    const fareType = String(input.fareType || "base_fare").trim();
+    if (![airlineId, departureAirportId, arrivalAirportId].every(Number.isSafeInteger) || departureAirportId === arrivalAirportId || !/^[A-Z0-9][A-Z0-9-]{1,14}$/.test(flightNumber) || !Number.isFinite(price) || price < 0 || price > 99999999 || !/^[A-Z]{3}$/.test(currency) || !departure || !arrival || arrival <= departure || !["scheduled","cancelled","completed"].includes(scheduleStatus) || operatingDays.some(d=>!validDays.includes(d)) || !fareType || fareType.length>50) {
       throw new HttpError(400, "Enter a valid flight, route, date, and fare.");
     }
     const depSql = departure;
@@ -124,8 +140,8 @@ const Admin = {
         const [result] = await connection.execute(
           `UPDATE flight_schedules SET airline_id = ?, departure_airport_id = ?, arrival_airport_id = ?,
            flight_number = ?, departure_at = ?, arrival_at = ?, effective_from = ?, effective_until = ?,
-           schedule_status = 'scheduled' WHERE id = ?`,
-          [airlineId, departureAirportId, arrivalAirportId, flightNumber, depSql, arrSql, travelDate, travelDate, id],
+           operating_days = ?, schedule_status = ? WHERE id = ?`,
+          [airlineId, departureAirportId, arrivalAirportId, flightNumber, depSql, arrSql, travelDate, travelDate, JSON.stringify(operatingDays), scheduleStatus, id],
         );
         if (!result.affectedRows) throw new HttpError(404, "Flight schedule not found.");
       } else {
@@ -133,16 +149,16 @@ const Admin = {
           `INSERT INTO flight_schedules (airline_id, departure_airport_id, arrival_airport_id,
            flight_number, departure_at, arrival_at, schedule_status, data_source,
            effective_from, effective_until, operating_days)
-           VALUES (?, ?, ?, ?, ?, ?, 'scheduled', 'Tripzo admin', ?, ?, JSON_ARRAY(DAYNAME(?)))`,
-          [airlineId, departureAirportId, arrivalAirportId, flightNumber, depSql, arrSql, travelDate, travelDate, travelDate],
+           VALUES (?, ?, ?, ?, ?, ?, ?, 'Tripzo admin', ?, ?, ?)`,
+          [airlineId, departureAirportId, arrivalAirportId, flightNumber, depSql, arrSql, scheduleStatus, travelDate, travelDate, JSON.stringify(operatingDays)],
         );
         scheduleId = result.insertId;
       }
       const [fareRows] = await connection.execute("SELECT id FROM fares WHERE flight_schedule_id = ? AND fare_type = 'base_fare' ORDER BY id LIMIT 1", [scheduleId]);
       if (fareRows.length) {
-        await connection.execute("UPDATE fares SET amount = ?, currency = ?, fare_status = 'unverified', fare_source = 'Admin-entered; not independently verified', source_verified_at = NULL WHERE id = ?", [price, currency, fareRows[0].id]);
+        await connection.execute("UPDATE fares SET amount = ?, currency = ?, fare_type = ?, fare_status = 'unverified', fare_source = 'Admin-entered; not independently verified', source_verified_at = NULL WHERE id = ?", [price, currency, fareType, fareRows[0].id]);
       } else {
-        await connection.execute("INSERT INTO fares (flight_schedule_id, amount, currency, fare_type, fare_status, fare_source) VALUES (?, ?, ?, 'base_fare', 'unverified', 'Admin-entered; not independently verified')", [scheduleId, price, currency]);
+        await connection.execute("INSERT INTO fares (flight_schedule_id, amount, currency, fare_type, fare_status, fare_source) VALUES (?, ?, ?, ?, 'unverified', 'Admin-entered; not independently verified')", [scheduleId, price, currency, fareType]);
       }
       await connection.commit();
       return scheduleId;

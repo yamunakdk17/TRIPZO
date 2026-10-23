@@ -22,9 +22,19 @@ To reset an existing administrator's password, temporarily set `ADMIN_EMAIL` and
 
 To change the admin email, set the current email as `ADMIN_EMAIL` and the desired address as `ADMIN_NEW_EMAIL` in `backend/.env`, then run `npm run admin:change-email`. After success, update `ADMIN_EMAIL` to the new address and remove `ADMIN_NEW_EMAIL`.
 
-Admin endpoints: `POST /api/admin/login` (public), then authorized `GET /api/admin/dashboard`, `/flights`, `/airlines`, `/airports`, `/bookings`, `/users`; flight schedule changes use `POST /flights`, `PUT /flights/:id`, and `DELETE /flights/:id` (cancel). Admin-entered fares are marked unverified. Hotel administration remains unavailable because this database has no hotel table or hotel API.
+After starting Vite, open `http://localhost:5173/admin` and sign in with the active admin account. The React router already maps `/admin`; no extra route setup is needed.
 
-The migration adds travel date, fare reference, demo marker, and idempotency fields to the existing `bookings` table and a unique index for Duffel offer references. It preserves existing flight, fare, passenger, booking, payment, and ticket data. The checked in `.sql` file is the equivalent one-time SQL for manual use; prefer the idempotent migration command on an existing database.
+Admin APIs are under `/api/admin`. `POST /login` is public; every other route requires a valid bearer token and a user whose current MySQL role is `admin` and status is `active`. The console reads and writes the existing users, airlines, airports, flight schedules, fares, bookings, and demo payment tables. The additive migration creates hotel/room inventory and admin audit log tables. Admin-entered fares are always marked unverified. Payment records are simulation records and cannot charge a real provider.
+
+Management endpoints include dashboard, flights, airlines, airports, hotels and nested rooms, bookings/status, users/status/role, demo payments, fares, audit logs, profile settings, password change, and logout. See `backend/routes/adminRoutes.js` for the exact route list and HTTP methods. Deletes of referenced airlines/airports, hotels, rooms, and fares preserve history through deactivation or expiry.
+
+`npm run db:migrate` applies additive, idempotent schema changes and tracks applied versions in `schema_migrations`. It preserves existing flight, fare, passenger, booking, payment, and ticket data. Prefer the migration command over manually running SQL files against an existing database.
+
+## Local run and verification
+
+From `backend`, install packages with `npm install`, apply migrations with `npm run db:migrate`, then run the API with `npm start` (or `npm run dev`). From `Frontend`, install packages with `npm install`, then run `npm run dev`. For the existing integration smoke checks, run `npm test` in `backend`; for frontend static checks, run `npm run lint` and `npm run build` in `Frontend`.
+
+The admin console currently manages hotel inventory and room records. It does not create hotel reservations because this project has no hotel booking workflow. Audit records are append-only through the API. The payment view shows demo payment history only.
 
 ## Flight endpoints
 
