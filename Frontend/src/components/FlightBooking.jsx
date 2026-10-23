@@ -219,16 +219,24 @@ function FlightCard({ flight, onSelect }) {
           <div className="lg:text-right">
             <p className="text-xs text-slate-500">Fare per adult</p>
             <p className="text-2xl font-black text-teal-700">
-              {formatFare(flight.price, flight.currency)}
+              {flight.price != null && flight.fareId != null
+                ? formatFare(flight.price, flight.currency)
+                : "Price unavailable"}
             </p>
           </div>
 
           <button
             type="button"
+            disabled={flight.price == null || flight.fareId == null}
             onClick={() => onSelect(flight)}
-            className="rounded-xl bg-teal-700 px-5 py-3 text-sm font-bold text-white transition hover:bg-teal-800 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-teal-700"
+            className="rounded-xl bg-teal-700 px-5 py-3 text-sm font-bold text-white disabled:cursor-not-allowed disabled:opacity-50"
           >
-            Select <ArrowRight className="ml-1 inline h-4 w-4" />
+            {flight.price == null || flight.fareId == null
+              ? "Unavailable"
+              : "Select"}
+            {flight.price != null && flight.fareId != null && (
+              <ArrowRight className="ml-1 inline h-4 w-4" />
+            )}
           </button>
         </div>
       </div>
@@ -248,7 +256,7 @@ export default function TripzoFlightBooking() {
   const [airportsError, setAirportsError] = useState("");
 
   const [from, setFrom] = useState("KTM");
-  const [to, setTo] = useState("PKR");
+  const [to, setTo] = useState("DHI");
   const [date, setDate] = useState(addDays(todayISO(), 7));
   const [paxCount, setPaxCount] = useState(1);
 
@@ -256,6 +264,11 @@ export default function TripzoFlightBooking() {
   const [flight, setFlight] = useState(null);
   const [pax, setPax] = useState([emptyPax()]);
   const [ticket, setTicket] = useState(null);
+  const [selectedFlight, setSelectedFlight] = useState(null);
+  const [passengers, setPassengers] = useState([]);
+  const [booking, setBooking] = useState(null);
+  const [bookingLoading, setBookingLoading] = useState(false);
+  const [bookingError, setBookingError] = useState("");
 
   const [filters, setFilters] = useState({
     airline: "All",
@@ -360,15 +373,31 @@ export default function TripzoFlightBooking() {
         (item) => filters.time === "Any" || slot(item.dep) === filters.time,
       )
       .sort((a, b) => {
-        if (sort === "cheapest") return a.price - b.price;
-        if (sort === "earliest") return toMin(a.dep) - toMin(b.dep);
-        return a.mins - b.mins;
+        if (sort === "cheapest") {
+          if (a.price == null) return 1;
+          if (b.price == null) return -1;
+          return a.price - b.price;
+        }
+
+        if (sort === "earliest") {
+          return toMin(a.dep) - toMin(b.dep);
+        }
+
+        if (sort === "fastest") {
+          return a.mins - b.mins;
+        }
+
+        return 0;
       });
   }, [routeFlights, filters, sort]);
 
-  const lowestFare = routeFlights.length
-    ? Math.min(...routeFlights.map((item) => item.price))
-    : 0;
+  const pricedFlights = routeFlights.filter(
+    (item) => item.price != null && item.fareId != null,
+  );
+
+  const lowestFare = pricedFlights.length
+    ? Math.min(...pricedFlights.map((item) => item.price))
+    : null;
 
   const strip = useMemo(() => {
     const firstDay = date < todayISO() ? todayISO() : addDays(date, -3);
@@ -416,32 +445,39 @@ export default function TripzoFlightBooking() {
         throw new Error("The flight search API returned an invalid response.");
       }
 
-      const mappedFlights = data
-        .map((item) => ({
-          id: item.id,
-          airline: item.airline || "Airline unavailable",
-          code: item.airlineCode || "",
-          no: item.flightNumber || "",
-          from: item.fromCode || from,
-          to: item.toCode || to,
-          dep: item.dep || "",
-          arr: item.arr || "",
-          mins: Number(item.mins) || 0,
-          price: Number(item.price),
-          currency: item.currency || "NPR",
-          fareSource: item.fareSource || null,
-          sourceVerifiedAt: item.sourceVerifiedAt || null,
-        }))
-        .filter((item) => Number.isFinite(item.price));
+      const mappedFlights = data.map((item) => ({
+        id: item.id,
+        airline: item.airline || "Airline unavailable",
+        code: item.airlineCode || "",
+        no: item.flightNumber || "",
+        from: item.fromCode || from,
+        to: item.toCode || to,
+        dep: item.dep || "",
+        arr: item.arr || "",
+        mins: Number(item.mins) || 0,
 
-     setRouteFlights(mappedFlights);
-     setFilters({ airline: "All", time: "Any" });
+        // Keep missing prices unavailable instead of turning them into zero.
+        price:
+          item.price != null && Number.isFinite(Number(item.price))
+            ? Number(item.price)
+            : null,
 
-     go("RESULTS");
+        currency: item.currency || "NPR",
+        fareId: item.fareId ?? null,
+        fareType: item.fareType || null,
+        fareStatus: item.fareStatus || null,
+        fareSource: item.fareSource || null,
+        sourceVerifiedAt: item.sourceVerifiedAt || null,
+      }));
 
-     if (mappedFlights.length === 0) {
-       setError("No published fares were found for this route and date.");
-     }
+      setRouteFlights(mappedFlights);
+      setFilters({ airline: "All", time: "Any" });
+      go("RESULTS");
+
+      if (mappedFlights.length === 0) {
+        setError("No flight schedules were found for this route and date.");
+      }
+
     } catch (err) {
       setError(err.message || "Unable to search flights.");
     } finally {
@@ -860,8 +896,8 @@ export default function TripzoFlightBooking() {
               >
                 <span className="block text-xs">{fmtDate(day)}</span>
                 <span className="block text-sm font-black">
-                  {day === date && routeFlights.length
-                    ? formatFare(lowestFare, routeFlights[0].currency)
+                  {day === date && pricedFlights.length > 0
+                    ? formatFare(lowestFare, pricedFlights[0].currency)
                     : "Search fares"}
                 </span>
               </button>
@@ -943,16 +979,21 @@ export default function TripzoFlightBooking() {
 
           <p className="mb-3 mt-6 text-sm text-slate-600">
             {results.length} {results.length === 1 ? "flight" : "flights"}
-            {routeFlights.length > 0 &&
-              ` · lowest fare ${formatFare(
-                lowestFare,
-                routeFlights[0].currency,
-              )}`}
+            {pricedFlights.length > 0
+              ? ` · lowest verified fare ${formatFare(
+                  lowestFare,
+                  pricedFlights[0].currency,
+                )}`
+              : " · no verified fares available"}
           </p>
 
           <div className="space-y-3">
             {results.map((item) => (
-              <FlightCard key={item.id} flight={item} onSelect={choose} />
+              <FlightCard
+                key={`${item.id}-${item.fareId ?? "unpriced"}`}
+                flight={item}
+                onSelect={choose}
+              />
             ))}
 
             {!results.length && (
@@ -960,7 +1001,7 @@ export default function TripzoFlightBooking() {
                 <p className="font-bold">
                   {searching
                     ? "Searching flight schedules..."
-                    : "No matching published fares were found."}
+                    : "No flight schedules match your search."}
                 </p>
 
                 <p className="mt-2 text-sm text-slate-500">
