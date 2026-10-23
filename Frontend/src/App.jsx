@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import { useState } from "react";
 import Navbar from "./components/Navbar";
 import Footer from "./components/Footer";
 import FlightBooking from "./components/FlightBooking";
@@ -6,7 +6,7 @@ import BusBooking from "./components/BusBooking";
 import AirportTaxi from "./components/AirportTaxi";
 import StaysBooking from "./components/StaysBooking";
 import AiPlanner from "./components/AiPlanner";
-
+import AdminDashboard from "./pages/AdminDashboard";
 export default function App() {
   const [activeTab, setActiveTab] = useState("flights");
   const [currency, setCurrency] = useState("NPR");
@@ -28,7 +28,9 @@ const formatPrice = (amount, fromCurrency = "NPR") => {
     return `$${(value / 133).toFixed(2)}`;
   }
 };
-
+if (window.location.pathname.startsWith("/admin")) {
+  return <AdminDashboard />;
+}
   return (
     <div className="min-h-screen bg-[#F4F6EF] text-[#13294B] font-sans antialiased flex flex-col">
       <Navbar

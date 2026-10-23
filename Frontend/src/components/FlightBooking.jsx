@@ -9,7 +9,6 @@ import {
   CheckCircle2,
   Clock,
   Luggage,
-  Wallet,
   Ticket,
   Search,
   RotateCcw,
@@ -17,11 +16,15 @@ import {
   ChevronLeft,
   ChevronRight,
   Loader2,
-  CreditCard,
-  Printer,
 } from "lucide-react";
 
-import { getAirports, searchFlights } from "../services/flightApi.js";
+import {
+  createDemoBooking,
+  getAirports,
+  searchDuffelOffers,
+  searchFlights,
+  simulateDemoPayment,
+} from "../services/flightApi.js";
 
 /* -------------------------------------------------------
    HELPERS
@@ -116,7 +119,7 @@ const emptyPax = () => ({
 const input =
   "w-full rounded-xl border border-slate-200 bg-white p-3 text-sm outline-none focus:border-teal-600 focus:ring-2 focus:ring-teal-600/20";
 
-const STEPS = ["Flights", "Passengers", "Payment", "Ticket"];
+const STEPS = ["Flights", "Passengers", "Review", "Demo payment", "Confirmation"];
 
 /* -------------------------------------------------------
    STEP INDICATOR
@@ -162,6 +165,12 @@ function Stepper({ current }) {
 ------------------------------------------------------- */
 
 function FlightCard({ flight, onSelect }) {
+  const canSelect =
+    flight.price != null &&
+    (flight.source === "duffel_test"
+      ? Boolean(flight.providerOfferId)
+      : Boolean(flight.fareId));
+
   return (
     <article className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm transition hover:border-teal-300 hover:shadow-md">
       <div className="grid items-center gap-5 lg:grid-cols-[1.1fr_1.6fr_1fr_auto]">
@@ -174,6 +183,11 @@ function FlightCard({ flight, onSelect }) {
             <h3 className="font-bold">{flight.airline}</h3>
             <p className="text-xs text-slate-500">
               {flight.no || "Flight number unavailable"}
+            </p>
+            <p className="mt-1 text-[11px] font-bold text-teal-800">
+              {flight.source === "duffel_test"
+                ? "Duffel test offer"
+                : "Local database schedule"}
             </p>
           </div>
         </div>
@@ -188,7 +202,9 @@ function FlightCard({ flight, onSelect }) {
 
           <div className="flex flex-1 flex-col items-center gap-1">
             <span className="text-[11px] text-slate-500">
-              {flight.mins > 0 ? `${flight.mins} min` : "Duration unavailable"}
+              {flight.mins > 0
+                ? `${flight.mins} min`
+                : "Duration unavailable"}
             </span>
 
             <div className="relative w-full border-t border-dashed border-teal-500">
@@ -196,7 +212,11 @@ function FlightCard({ flight, onSelect }) {
             </div>
 
             <span className="text-[11px] font-semibold text-slate-500">
-              Stop information unavailable
+              {flight.stops != null
+                ? flight.stops === 0
+                  ? "Direct"
+                  : `${flight.stops} stop${flight.stops === 1 ? "" : "s"}`
+                : "Stop information unavailable"}
             </span>
           </div>
 
@@ -217,24 +237,33 @@ function FlightCard({ flight, onSelect }) {
 
         <div className="flex items-center justify-between gap-4 border-t border-slate-100 pt-4 lg:flex-col lg:items-end lg:border-0 lg:pt-0">
           <div className="lg:text-right">
-            <p className="text-xs text-slate-500">Fare per adult</p>
+            <p className="text-xs text-slate-500">
+              {flight.source === "duffel_test"
+                ? "Test offer total"
+                : "Database base fare / adult"}
+            </p>
             <p className="text-2xl font-black text-teal-700">
-              {flight.price != null && flight.fareId != null
+              {flight.price != null
                 ? formatFare(flight.price, flight.currency)
                 : "Price unavailable"}
+            </p>
+            <p className="mt-1 max-w-44 text-[10px] leading-4 text-slate-500">
+              {flight.source === "duffel_test"
+                ? "Test offer only. Price and availability can change."
+                : flight.fareStatus === "published" && flight.sourceVerifiedAt
+                  ? "Published database fare. Rechecked before demo booking."
+                  : "Unverified fare — informational use only."}
             </p>
           </div>
 
           <button
             type="button"
-            disabled={flight.price == null || flight.fareId == null}
+            disabled={!canSelect}
             onClick={() => onSelect(flight)}
             className="rounded-xl bg-teal-700 px-5 py-3 text-sm font-bold text-white disabled:cursor-not-allowed disabled:opacity-50"
           >
-            {flight.price == null || flight.fareId == null
-              ? "Unavailable"
-              : "Select"}
-            {flight.price != null && flight.fareId != null && (
+            {!canSelect ? "Unavailable" : "Select"}
+            {canSelect && (
               <ArrowRight className="ml-1 inline h-4 w-4" />
             )}
           </button>
@@ -261,14 +290,12 @@ export default function TripzoFlightBooking() {
   const [paxCount, setPaxCount] = useState(1);
 
   const [routeFlights, setRouteFlights] = useState([]);
+  const [providerFlights, setProviderFlights] = useState([]);
   const [flight, setFlight] = useState(null);
   const [pax, setPax] = useState([emptyPax()]);
-  const [ticket, setTicket] = useState(null);
-  const [selectedFlight, setSelectedFlight] = useState(null);
-  const [passengers, setPassengers] = useState([]);
   const [booking, setBooking] = useState(null);
   const [bookingLoading, setBookingLoading] = useState(false);
-  const [bookingError, setBookingError] = useState("");
+  const [idempotencyKey, setIdempotencyKey] = useState(() => crypto.randomUUID());
 
   const [filters, setFilters] = useState({
     airline: "All",
@@ -276,9 +303,9 @@ export default function TripzoFlightBooking() {
   });
 
   const [sort, setSort] = useState("cheapest");
-  const [method, setMethod] = useState("Khalti");
 
   const [searching, setSearching] = useState(false);
+  const [providerError, setProviderError] = useState("");
   const [paying, setPaying] = useState(false);
   const [error, setError] = useState("");
 
@@ -351,9 +378,18 @@ export default function TripzoFlightBooking() {
   const airlinesOnRoute = useMemo(
     () => [
       "All",
-      ...new Set(routeFlights.map((item) => item.airline).filter(Boolean)),
+      ...new Set(
+        [...routeFlights, ...providerFlights]
+          .map((item) => item.airline)
+          .filter(Boolean),
+      ),
     ],
-    [routeFlights],
+    [routeFlights, providerFlights],
+  );
+
+  const allFlights = useMemo(
+    () => [...routeFlights, ...providerFlights],
+    [routeFlights, providerFlights],
   );
 
   const results = useMemo(() => {
@@ -365,7 +401,7 @@ export default function TripzoFlightBooking() {
       return "Evening";
     };
 
-    return routeFlights
+    return allFlights
       .filter(
         (item) => filters.airline === "All" || item.airline === filters.airline,
       )
@@ -389,15 +425,7 @@ export default function TripzoFlightBooking() {
 
         return 0;
       });
-  }, [routeFlights, filters, sort]);
-
-  const pricedFlights = routeFlights.filter(
-    (item) => item.price != null && item.fareId != null,
-  );
-
-  const lowestFare = pricedFlights.length
-    ? Math.min(...pricedFlights.map((item) => item.price))
-    : null;
+  }, [allFlights, filters, sort]);
 
   const strip = useMemo(() => {
     const firstDay = date < todayISO() ? todayISO() : addDays(date, -3);
@@ -405,11 +433,13 @@ export default function TripzoFlightBooking() {
     return Array.from({ length: 7 }, (_, index) => addDays(firstDay, index));
   }, [date]);
 
-  const base = flight ? Number(flight.price) * paxCount : 0;
+  const base = flight
+    ? Number(flight.price) *
+      (flight.source === "duffel_test" ? 1 : paxCount)
+    : 0;
 
   // No taxes are invented here. The actual fare/fee breakdown
   // must come from a verified source or backend calculation.
-  const total = base;
 
   /* Search a specific date through the backend */
   const searchForDate = async (selectedDate) => {
@@ -432,21 +462,29 @@ export default function TripzoFlightBooking() {
 
     setSearching(true);
     setRouteFlights([]);
+    setProviderFlights([]);
+    setProviderError("");
     setDate(selectedDate);
 
     try {
-      const data = await searchFlights({
-        from,
-        to,
-        date: selectedDate,
-      });
+      const [databaseResult, providerResult] = await Promise.allSettled([
+        searchFlights({ from, to, date: selectedDate }),
+        searchDuffelOffers({
+          from,
+          to,
+          date: selectedDate,
+          adults: paxCount,
+        }),
+      ]);
 
-      if (!Array.isArray(data)) {
+      if (databaseResult.status === "rejected") throw databaseResult.reason;
+      if (!Array.isArray(databaseResult.value)) {
         throw new Error("The flight search API returned an invalid response.");
       }
 
-      const mappedFlights = data.map((item) => ({
+      const mappedFlights = databaseResult.value.map((item) => ({
         id: item.id,
+        source: item.source || "database",
         airline: item.airline || "Airline unavailable",
         code: item.airlineCode || "",
         no: item.flightNumber || "",
@@ -468,14 +506,55 @@ export default function TripzoFlightBooking() {
         fareStatus: item.fareStatus || null,
         fareSource: item.fareSource || null,
         sourceVerifiedAt: item.sourceVerifiedAt || null,
+        stops: item.stops ?? null,
       }));
+
+      if (providerResult.status === "rejected") {
+        setProviderError(providerResult.reason.message || "Duffel test offers are unavailable.");
+      } else if (!Array.isArray(providerResult.value)) {
+        setProviderError("Duffel returned an invalid offers response.");
+      } else {
+        setProviderFlights(
+          providerResult.value.map((item) => ({
+            id: item.id,
+            source: "duffel_test",
+            providerOfferId: item.providerOfferId,
+            airline: item.airline || "Airline unavailable",
+            code: item.airlineCode || "",
+            no: item.flightNumber || "",
+            from: item.fromCode || from,
+            to: item.toCode || to,
+            dep: item.dep || "",
+            arr: item.arr || "",
+            mins: Number(item.mins) || 0,
+            stops: Number.isInteger(Number(item.stops))
+              ? Number(item.stops)
+              : null,
+            price:
+              item.price != null && Number.isFinite(Number(item.price))
+                ? Number(item.price)
+                : null,
+            currency: item.currency || "",
+            fareId: null,
+            fareType: null,
+            fareStatus: "provider_offer",
+            sourceVerifiedAt: null,
+            expiresAt: item.expiresAt || null,
+          })),
+        );
+      }
 
       setRouteFlights(mappedFlights);
       setFilters({ airline: "All", time: "Any" });
       go("RESULTS");
 
-      if (mappedFlights.length === 0) {
-        setError("No flight schedules were found for this route and date.");
+      if (
+        mappedFlights.length === 0 &&
+        (providerResult.status === "rejected" ||
+          !Array.isArray(providerResult.value) ||
+          providerResult.value.length === 0)
+      ) {
+        setError("No schedules or Duffel test offers were found for this route and date.");
       }
 
     } catch (err) {
@@ -498,6 +577,8 @@ export default function TripzoFlightBooking() {
   const choose = (selectedFlight) => {
     setFlight(selectedFlight);
     setPax(Array.from({ length: paxCount }, emptyPax));
+    setBooking(null);
+    setIdempotencyKey(crypto.randomUUID());
     go("CHECKOUT");
   };
 
@@ -509,8 +590,9 @@ export default function TripzoFlightBooking() {
     );
   };
 
-  const toPayment = (event) => {
+  const toPayment = async (event) => {
     event.preventDefault();
+    if (!flight || bookingLoading) return;
 
     if (
       pax.some(
@@ -525,37 +607,57 @@ export default function TripzoFlightBooking() {
       return;
     }
 
-    go("PAYMENT");
+    setBookingLoading(true);
+    setError("");
+    try {
+      const result = await createDemoBooking(
+        {
+          source: flight.source,
+          from,
+          to,
+          date,
+          flightId: flight.id,
+          fareId: flight.fareId,
+          providerOfferId: flight.providerOfferId,
+          passengers: pax,
+        },
+        idempotencyKey,
+      );
+
+      setBooking(result.data);
+      go("REVIEW");
+    } catch (err) {
+      setError(err.message || "Unable to create the demo booking.");
+    } finally {
+      setBookingLoading(false);
+    }
   };
 
-  // This intentionally remains a simulation.
-  // It does not call a payment provider or create a database booking.
-  const pay = () => {
-    if (!flight || paying) return;
+  const pay = async () => {
+    if (!booking?.reference || paying) return;
 
     setPaying(true);
-
-    setTimeout(() => {
-      setTicket({
-        pnr: `TPZ-DEMO-${Math.floor(100000 + Math.random() * 900000)}`,
-        flight,
-        pax: pax.map((person) => ({ ...person })),
-        date,
-        total,
-        method,
-        issued: new Date().toLocaleString("en-GB"),
-      });
-
-      setPaying(false);
+    setError("");
+    try {
+      const result = await simulateDemoPayment(booking.reference);
+      setBooking(result.data);
       go("TICKET");
-    }, 1200);
+    } catch (err) {
+      setError(err.message || "Unable to record the demo payment action.");
+    } finally {
+      setPaying(false);
+    }
   };
 
   const reset = () => {
     setFlight(null);
-    setTicket(null);
+    setBooking(null);
     setRouteFlights([]);
+    setProviderFlights([]);
+    setProviderError("");
     setPaying(false);
+    setBookingLoading(false);
+    setIdempotencyKey(crypto.randomUUID());
     setFilters({ airline: "All", time: "Any" });
     go("SEARCH");
   };
@@ -563,8 +665,9 @@ export default function TripzoFlightBooking() {
   const stepIndex = {
     RESULTS: 0,
     CHECKOUT: 1,
-    PAYMENT: 2,
-    TICKET: 3,
+    REVIEW: 2,
+    PAYMENT: 3,
+    TICKET: 4,
   }[step];
 
   /* -----------------------------------------------------
@@ -896,9 +999,7 @@ export default function TripzoFlightBooking() {
               >
                 <span className="block text-xs">{fmtDate(day)}</span>
                 <span className="block text-sm font-black">
-                  {day === date && pricedFlights.length > 0
-                    ? formatFare(lowestFare, pricedFlights[0].currency)
-                    : "Search fares"}
+                  {day === date ? "Selected date" : "Search offers"}
                 </span>
               </button>
             ))}
@@ -977,24 +1078,56 @@ export default function TripzoFlightBooking() {
             </p>
           )}
 
+          {providerError && (
+            <p
+              role="status"
+              className="mt-4 rounded-xl border border-sky-200 bg-sky-50 p-4 text-sm text-sky-900"
+            >
+              Duffel test offers are unavailable: {providerError} Local database
+              schedules below are searched independently.
+            </p>
+          )}
+
           <p className="mb-3 mt-6 text-sm text-slate-600">
-            {results.length} {results.length === 1 ? "flight" : "flights"}
-            {pricedFlights.length > 0
-              ? ` · lowest verified fare ${formatFare(
-                  lowestFare,
-                  pricedFlights[0].currency,
-                )}`
-              : " · no verified fares available"}
+            {results.filter((item) => item.source === "database").length} local
+            database schedules · {results.filter((item) => item.source === "duffel_test").length} Duffel
+            test offers
           </p>
 
-          <div className="space-y-3">
-            {results.map((item) => (
-              <FlightCard
-                key={`${item.id}-${item.fareId ?? "unpriced"}`}
-                flight={item}
-                onSelect={choose}
-              />
-            ))}
+          <div className="space-y-5">
+            {results.some((item) => item.source === "database") && (
+              <section aria-labelledby="database-flights-heading" className="space-y-3">
+                <h3 id="database-flights-heading" className="text-lg font-black">
+                  Local database schedules
+                </h3>
+                {results
+                  .filter((item) => item.source === "database")
+                  .map((item) => (
+                    <FlightCard
+                      key={`database-${item.id}-${item.fareId ?? "unpriced"}`}
+                      flight={item}
+                      onSelect={choose}
+                    />
+                  ))}
+              </section>
+            )}
+
+            {results.some((item) => item.source === "duffel_test") && (
+              <section aria-labelledby="duffel-flights-heading" className="space-y-3">
+                <h3 id="duffel-flights-heading" className="text-lg font-black">
+                  Duffel test offers
+                </h3>
+                {results
+                  .filter((item) => item.source === "duffel_test")
+                  .map((item) => (
+                    <FlightCard
+                      key={`duffel-${item.providerOfferId}`}
+                      flight={item}
+                      onSelect={choose}
+                    />
+                  ))}
+              </section>
+            )}
 
             {!results.length && (
               <div className="rounded-2xl border border-dashed border-slate-300 bg-white p-10 text-center">
@@ -1131,6 +1264,9 @@ export default function TripzoFlightBooking() {
                         }
                         className={input}
                       />
+                      <p className="mt-1 text-xs text-slate-500">
+                        Document details are checked for this demo request but are not saved.
+                      </p>
                     </div>
                   </div>
                 </fieldset>
@@ -1154,10 +1290,11 @@ export default function TripzoFlightBooking() {
 
               <button
                 type="submit"
+                disabled={bookingLoading}
                 className="w-full rounded-xl bg-teal-700 p-4 font-black text-white transition hover:bg-teal-800"
               >
-                Continue to payment{" "}
-                <ArrowRight className="ml-1 inline h-5 w-5" />
+                {bookingLoading ? "Saving demo booking..." : "Review demo booking"}{" "}
+                {!bookingLoading && <ArrowRight className="ml-1 inline h-5 w-5" />}
               </button>
             </form>
 
@@ -1200,226 +1337,171 @@ export default function TripzoFlightBooking() {
 
               <dl className="space-y-3 text-sm">
                 <div className="flex justify-between">
-                  <dt className="text-slate-500">{paxCount} × adult fare</dt>
+                  <dt className="text-slate-500">
+                    {flight.source === "duffel_test"
+                      ? `Test offer total (${paxCount} adults)`
+                      : `${paxCount} × unverified base fare`}
+                  </dt>
                   <dd className="font-bold">
                     {formatFare(base, flight.currency)}
                   </dd>
                 </div>
 
                 <div className="flex justify-between border-t border-slate-100 pt-3">
-                  <dt className="font-black">Estimated total</dt>
+                  <dt className="font-black">Current estimate</dt>
                   <dd className="text-xl font-black text-teal-700">
-                    {formatFare(total, flight.currency)}
+                    {formatFare(base, flight.currency)}
                   </dd>
                 </div>
               </dl>
 
               <p className="mt-4 text-xs text-slate-500">
-                This estimate uses the stored fare multiplied by the number of
-                passengers. Additional fees have not been included.
+                {flight.source === "duffel_test"
+                  ? "Duffel test offers are refreshed by the backend before the demo booking is saved. No real order or ticket is created."
+                  : "This stored database fare is unverified and may omit fees. It is informational only; no money is charged."}
               </p>
             </aside>
           </div>
         </main>
       )}
 
-      {/* PAYMENT - SIMULATION ONLY */}
-      {step === "PAYMENT" && flight && (
+      {/* BOOKING REVIEW */}
+      {step === "REVIEW" && flight && booking && (
+        <main className="mx-auto max-w-3xl px-4 pb-10">
+          <section className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm sm:p-8">
+            <h1 className="text-2xl font-black">Review demo booking</h1>
+            <p className="mt-1 text-sm text-slate-500">
+              The backend rechecked the selected schedule or refreshed the Duffel test offer.
+            </p>
+
+            <div className="mt-6 rounded-xl bg-[#F4F6EF] p-5">
+              <p className="font-black">{booking.airline} · {booking.flightNumber}</p>
+              <p className="mt-2 text-sm">
+                {booking.fromCode} {booking.departureTime} → {booking.toCode} {booking.arrivalTime}
+              </p>
+              <p className="mt-1 text-sm text-slate-500">{fmtDate(date)}</p>
+            </div>
+
+            <h2 className="mt-6 font-black">Passengers</h2>
+            <ul className="mt-2 list-inside list-disc text-sm text-slate-700">
+              {booking.passengers.map((person, index) => (
+                <li key={`${person.name}-${index}`}>{person.name}</li>
+              ))}
+            </ul>
+
+            <div className="mt-6 flex items-center justify-between border-t border-slate-100 pt-5">
+              <span className="font-bold">Database demo amount</span>
+              <span className="text-xl font-black text-teal-700">
+                {formatFare(booking.totalAmount, booking.currency)}
+              </span>
+            </div>
+
+            <p className="mt-4 rounded-xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-900">
+              {booking.fareStatus === "unverified"
+                ? "This amount uses an unverified database base fare and may omit fees. It is informational only."
+                : "This is a test/demo amount. It is not a final airline quote."}{" "}
+              No reservation has been made and no money will be charged.
+            </p>
+
+            {error && <p role="alert" className="mt-4 text-sm text-red-600">{error}</p>}
+
+            <button
+              type="button"
+              onClick={() => go("PAYMENT")}
+              className="mt-6 flex w-full items-center justify-center gap-2 rounded-xl bg-teal-700 p-4 font-black text-white"
+            >
+              Continue to demo payment <ArrowRight className="h-5 w-5" />
+            </button>
+          </section>
+        </main>
+      )}
+
+      {/* DEMO PAYMENT */}
+      {step === "PAYMENT" && flight && booking && (
         <main className="mx-auto max-w-lg px-4 pb-10">
           <button
             type="button"
-            onClick={() => go("CHECKOUT")}
+            onClick={() => go("REVIEW")}
             disabled={paying}
             className="mb-5 inline-flex items-center gap-2 text-sm font-bold text-teal-700 disabled:opacity-50"
           >
-            <ArrowLeft className="h-4 w-4" /> Back to passengers
+            <ArrowLeft className="h-4 w-4" /> Back to review
           </button>
 
           <div className="rounded-2xl border border-slate-200 bg-white p-6 shadow-xl sm:p-8">
-            <h1 className="text-2xl font-black">
-              Pay {formatFare(total, flight.currency)}
-            </h1>
-
+            <h1 className="text-2xl font-black">Demo payment</h1>
+            <p className="mt-2 text-xl font-black text-teal-700">
+              {formatFare(booking.totalAmount, booking.currency)}
+            </p>
             <p className="mt-1 text-sm text-slate-500">
-              {flight.from} to {flight.to} · {fmtDate(date)} · {paxCount}{" "}
+              {booking.fromCode} to {booking.toCode} · {fmtDate(date)} · {paxCount}{" "}
               {paxCount === 1 ? "adult" : "adults"}
             </p>
 
-            <div
-              className="mt-6 grid gap-3"
-              role="radiogroup"
-              aria-label="Payment method"
-            >
-              {[
-                {
-                  name: "Khalti",
-                  icon: Wallet,
-                  color: "border-purple-600 bg-purple-50",
-                },
-                {
-                  name: "eSewa",
-                  icon: Wallet,
-                  color: "border-green-600 bg-green-50",
-                },
-                {
-                  name: "Card",
-                  icon: CreditCard,
-                  color: "border-teal-600 bg-teal-50",
-                },
-              ].map(({ name, icon: Icon, color }) => (
-                <button
-                  key={name}
-                  type="button"
-                  role="radio"
-                  aria-checked={method === name}
-                  onClick={() => setMethod(name)}
-                  className={`flex items-center gap-3 rounded-xl border-2 p-4 text-left font-bold ${
-                    method === name ? color : "border-slate-200"
-                  }`}
-                >
-                  <Icon className="h-5 w-5" />
-                  {name === "Card" ? "Debit or credit card" : name}
-                </button>
-              ))}
+            <div className="my-5 rounded-xl border border-amber-200 bg-amber-50 p-4 text-sm leading-6 text-amber-900">
+              <p className="font-black">Demo payment — no money charged</p>
+              This records a simulated payment status in Tripzo. No card or payment provider is used.
             </div>
 
-            <div className="my-5 rounded-xl border border-amber-200 bg-amber-50 p-4 text-xs leading-5 text-amber-900">
-              <p className="font-black">Demo mode</p>
-              This action does not charge money, contact {method}, create a
-              database booking, or issue an airline ticket.
-            </div>
+            {error && <p role="alert" className="mb-4 text-sm text-red-600">{error}</p>}
 
             <button
               type="button"
               onClick={pay}
               disabled={paying}
-              className="flex w-full items-center justify-center gap-2 rounded-xl bg-[#13294B] p-4 font-black text-white transition hover:bg-[#1c3a69] disabled:opacity-70"
+              className="flex w-full items-center justify-center gap-2 rounded-xl bg-[#13294B] p-4 font-black text-white disabled:opacity-70"
             >
               {paying ? (
-                <>
-                  <Loader2 className="h-5 w-5 animate-spin" />
-                  Processing simulation
-                </>
+                <><Loader2 className="h-5 w-5 animate-spin" /> Saving demo payment...</>
               ) : (
-                <>Simulate {method} payment</>
+                "Record demo payment (no money charged)"
               )}
             </button>
           </div>
         </main>
       )}
 
-      {/* TICKET - DEMO CONFIRMATION */}
-      {step === "TICKET" && ticket && (
+      {/* DEMO CONFIRMATION — NOT AN AIRLINE TICKET */}
+      {step === "TICKET" && booking && flight && (
         <main className="mx-auto max-w-2xl px-4 pb-10">
           <div className="rounded-2xl bg-[#13294B] p-8 text-center text-white">
             <CheckCircle2 className="mx-auto h-12 w-12 text-teal-300" />
-
-            <h1 className="mt-3 text-2xl font-black">Demo booking created</h1>
-
-            <p className="mt-3 text-sm text-white/70">Simulation reference</p>
-
-            <p className="font-mono text-3xl font-black tracking-wider">
-              {ticket.pnr}
+            <h1 className="mt-3 text-2xl font-black">Demo booking recorded</h1>
+            <p className="mt-3 text-sm text-white/70">Demo booking reference</p>
+            <p className="font-mono text-2xl font-black tracking-wider">
+              {booking.reference}
+            </p>
+            <p className="mt-2 text-sm text-teal-200">
+              Payment status: {booking.paymentStatus === "SIMULATED_SUCCESS" ? "SIMULATED — NO MONEY CHARGED" : "PENDING"}
             </p>
           </div>
 
           <p className="mt-4 rounded-xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-900">
-            This is a frontend simulation only. It is not an airline ticket,
-            confirmed airline reservation, assigned seat, or proof of payment.
+            Demo booking — not an airline-issued ticket. No airline reservation, seat, or real payment was created.
           </p>
 
-          <div className="mt-4 space-y-4">
-            {ticket.pax.map((person, index) => (
-              <div
-                key={index}
-                className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm"
-              >
-                <div className="flex items-center justify-between bg-teal-700 px-6 py-3 text-white">
-                  <span className="flex items-center gap-2 font-black">
-                    <Ticket className="h-4 w-4" />
-                    Itinerary preview
-                  </span>
-
-                  <span className="text-sm">
-                    {ticket.flight.airline} · {ticket.flight.no}
-                  </span>
-                </div>
-
-                <div className="grid gap-5 p-6 sm:grid-cols-[1fr_auto]">
-                  <div>
-                    <p className="text-xs text-slate-500">Passenger</p>
-                    <p className="text-lg font-black">{person.name}</p>
-
-                    <div className="my-4 flex items-center gap-4">
-                      <div>
-                        <p className="text-3xl font-black">
-                          {ticket.flight.from}
-                        </p>
-                        <p className="text-xs text-slate-500">
-                          {to12h(ticket.flight.dep)}
-                        </p>
-                      </div>
-
-                      <Plane className="h-5 w-5 rotate-45 text-teal-700" />
-
-                      <div>
-                        <p className="text-3xl font-black">
-                          {ticket.flight.to}
-                        </p>
-                        <p className="text-xs text-slate-500">
-                          {to12h(ticket.flight.arr)}
-                        </p>
-                      </div>
-                    </div>
-
-                    <p className="text-sm text-slate-600">
-                      {fmtDate(ticket.date, {
-                        weekday: "long",
-                        day: "numeric",
-                        month: "long",
-                        year: "numeric",
-                      })}
-                    </p>
-                  </div>
-
-                  <div className="flex gap-6 border-t border-dashed border-slate-300 pt-4 sm:flex-col sm:gap-3 sm:border-l sm:border-t-0 sm:pl-6 sm:pt-0">
-                    <div>
-                      <p className="text-xs text-slate-500">Seat</p>
-                      <p className="text-sm font-bold">Not assigned</p>
-                    </div>
-
-                    <div>
-                      <p className="text-xs text-slate-500">Baggage</p>
-                      <p className="text-sm font-bold">Check with airline</p>
-                    </div>
-                  </div>
-                </div>
-              </div>
-            ))}
-          </div>
-
-          <div className="mt-4 flex items-center justify-between rounded-2xl bg-white p-5 text-sm shadow-sm">
-            <span className="text-slate-500">
-              Simulated payment method: {ticket.method}
-              <br />
-              {ticket.issued}
-            </span>
-
-            <span className="text-lg font-black text-teal-700">
-              {formatFare(ticket.total, ticket.flight.currency)}
-            </span>
+          <div className="mt-4 rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
+            <div className="flex items-center gap-2 font-black">
+              <Ticket className="h-4 w-4" /> Itinerary summary
+            </div>
+            <p className="mt-4 font-bold">{booking.airline} · {booking.flightNumber}</p>
+            <p className="mt-2 text-sm text-slate-600">
+              {booking.fromCode} {booking.departureTime} → {booking.toCode} {booking.arrivalTime}
+            </p>
+            <p className="mt-1 text-sm text-slate-600">
+              {fmtDate(date, { weekday: "long", day: "numeric", month: "long", year: "numeric" })}
+            </p>
+            <ul className="mt-4 list-inside list-disc text-sm">
+              {booking.passengers.map((person, index) => (
+                <li key={`${person.name}-${index}`}>{person.name}</li>
+              ))}
+            </ul>
+            <p className="mt-4 border-t border-slate-100 pt-4 text-lg font-black text-teal-700">
+              {formatFare(booking.totalAmount, booking.currency)}
+            </p>
           </div>
 
           <div className="no-print mt-4 flex flex-col gap-3 sm:flex-row">
-            <button
-              type="button"
-              onClick={() => window.print()}
-              className="flex flex-1 items-center justify-center gap-2 rounded-xl bg-teal-700 p-4 font-black text-white hover:bg-teal-800"
-            >
-              <Printer className="h-5 w-5" />
-              Print or save PDF
-            </button>
-
             <button
               type="button"
               onClick={reset}
@@ -1435,8 +1517,8 @@ export default function TripzoFlightBooking() {
         <div className="mx-auto flex max-w-7xl flex-col items-center justify-between gap-2 text-center sm:flex-row sm:text-left">
           <p className="font-black">Tripzo Nepal</p>
           <p className="text-xs text-slate-400">
-            Flight schedules and published fares are loaded from the backend.
-            Booking and payment are simulated.
+            Local database schedules and Duffel test offers are shown separately.
+            Bookings are stored as demos; payment is simulated and no ticket is issued.
           </p>
         </div>
       </footer>

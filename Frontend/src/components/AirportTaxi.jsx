@@ -1,4 +1,3 @@
-import React from "react";
 import { Car, Navigation, ShieldCheck } from "lucide-react";
 
 export default function AirportTaxi({ formatPrice }) {

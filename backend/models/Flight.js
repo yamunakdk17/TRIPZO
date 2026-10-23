@@ -5,6 +5,7 @@ const Flight = {
     const [rows] = await pool.execute(
       `SELECT
          fs.id,
+         'database' AS source,
          f.id AS fareId,
          al.airline_name AS airline,
          al.iata_code AS airlineCode,
@@ -33,16 +34,30 @@ const Flight = {
          ON arr.id = fs.arrival_airport_id
        CROSS JOIN (SELECT CAST(? AS DATE) AS travel_date) AS search
        LEFT JOIN fares f
-         ON f.flight_schedule_id = fs.id
-         AND f.fare_status = 'published'
-         AND (
-           f.valid_from IS NULL
-           OR f.valid_from <= TIMESTAMP(search.travel_date, TIME(fs.departure_at))
+         ON f.id = (
+           SELECT f2.id
+           FROM fares f2
+           WHERE f2.flight_schedule_id = fs.id
+             AND f2.fare_type = 'base_fare'
+             AND f2.fare_status IN ('published', 'unverified')
+             AND (
+               f2.valid_from IS NULL
+               OR f2.valid_from <= TIMESTAMP(
+                 search.travel_date,
+                 TIME(fs.departure_at)
+               )
+             )
+             AND (
+               f2.valid_until IS NULL
+               OR f2.valid_until > TIMESTAMP(
+                 search.travel_date,
+                 TIME(fs.departure_at)
+               )
+             )
+           ORDER BY (f2.fare_status = 'published') DESC, f2.amount ASC, f2.id ASC
+           LIMIT 1
          )
-         AND (
-           f.valid_until IS NULL
-           OR f.valid_until > TIMESTAMP(search.travel_date, TIME(fs.departure_at))
-         )
+
        WHERE dep.iata_code = ?
          AND arr.iata_code = ?
          AND COALESCE(fs.effective_from, DATE(fs.departure_at)) <= search.travel_date
@@ -58,7 +73,7 @@ const Flight = {
          AND dep.is_active = TRUE
          AND arr.is_active = TRUE
          AND al.is_active = TRUE
-       ORDER BY f.amount ASC`,
+       ORDER BY (f.amount IS NULL), f.amount ASC, fs.departure_at ASC`,
       [date, from, to],
     );
 

@@ -70,3 +70,31 @@ export async function searchFlights({ from, to, date }) {
   const data = await apiRequest(endpoint);
   return listFromResponse(data, "/flights/search", "flight search");
 }
+
+export async function searchDuffelOffers({ from, to, date, adults }) {
+  const data = await apiRequest("/flights/offers", {
+    method: "POST",
+    body: JSON.stringify({ from, to, date, adults }),
+  });
+
+  return listFromResponse(data, "/flights/offers", "Duffel test offer");
+}
+
+export async function createDemoBooking(booking, idempotencyKey) {
+  return apiRequest("/bookings", {
+    method: "POST",
+    headers: { "Idempotency-Key": idempotencyKey },
+    body: JSON.stringify(booking),
+  });
+}
+
+export async function getDemoBooking(reference) {
+  return apiRequest(`/bookings/${encodeURIComponent(reference)}`);
+}
+
+export async function simulateDemoPayment(reference) {
+  return apiRequest(
+    `/bookings/${encodeURIComponent(reference)}/demo-payment`,
+    { method: "POST", body: JSON.stringify({}) },
+  );
+}

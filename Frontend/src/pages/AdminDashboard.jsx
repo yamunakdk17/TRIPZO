@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import {
   Plane,
   LayoutDashboard,
@@ -76,6 +76,8 @@ export default function AdminDashboard() {
   const [stats, setStats] = useState(null);
   const [airlines, setAirlines] = useState([]);
   const [airports, setAirports] = useState([]);
+  const [bookings, setBookings] = useState([]);
+  const [users, setUsers] = useState([]);
   const [flightForm, setFlightForm] = useState(emptyFlight);
   const [editingId, setEditingId] = useState(null);
   const [showForm, setShowForm] = useState(false);
@@ -96,37 +98,49 @@ export default function AdminDashboard() {
     setStats(result.data || {});
   }
 
-  async function loadFormOptions(currentToken = token) {
-    const [airlineResult, airportResult] = await Promise.all([
-      request("/admin/airlines", currentToken),
-      request("/admin/airports", currentToken),
-    ]);
-
-    setAirlines(airlineResult.data || []);
-    setAirports(airportResult.data || []);
-  }
-
-  async function loadPage() {
+  const loadPage = useCallback(async () => {
     if (!token) return;
 
     setLoading(true);
     setError("");
 
     try {
-      await Promise.all([loadFlights(), loadDashboard(), loadFormOptions()]);
+      const [flightResult, dashboardResult, airlineResult, airportResult, bookingResult, userResult] =
+        await Promise.all([
+          request("/admin/flights", token),
+          request("/admin/dashboard", token),
+          request("/admin/airlines", token),
+          request("/admin/airports", token),
+          request("/admin/bookings", token),
+          request("/admin/users", token),
+        ]);
+      setFlights(flightResult.data || []);
+      setStats(dashboardResult.data || {});
+      setAirlines(airlineResult.data || []);
+      setAirports(airportResult.data || []);
+      setBookings(bookingResult.data || []);
+      setUsers(userResult.data || []);
     } catch (err) {
       setError(err.message);
-      if (err.message.toLowerCase().includes("token")) {
-        logout();
+      if (err.message.toLowerCase().includes("session") || err.message.toLowerCase().includes("sign in")) {
+        sessionStorage.removeItem("tripzo_admin_token");
+        setToken("");
+        setFlights([]);
+        setBookings([]);
+        setUsers([]);
+        setStats(null);
+        setSuccess("");
       }
     } finally {
       setLoading(false);
     }
-  }
+  }, [token]);
 
   useEffect(() => {
-    if (token) loadPage();
-  }, [token]);
+    if (!token) return undefined;
+    const timer = window.setTimeout(() => void loadPage(), 0);
+    return () => window.clearTimeout(timer);
+  }, [token, loadPage]);
 
   async function handleLogin(event) {
     event.preventDefault();
@@ -157,6 +171,8 @@ export default function AdminDashboard() {
     sessionStorage.removeItem("tripzo_admin_token");
     setToken("");
     setFlights([]);
+    setBookings([]);
+    setUsers([]);
     setStats(null);
     setError("");
     setSuccess("");
@@ -578,7 +594,40 @@ export default function AdminDashboard() {
             </>
           )}
 
-          {activePage !== "overview" && activePage !== "flights" && (
+          {activePage === "bookings" && (
+            <DataTable title="Bookings" rows={bookings} columns={[
+              ["Reference", "reference"], ["Status", "status"], ["Route", "route"],
+              ["Flight", "flightNumber"], ["Travel date", "travelDate"],
+              ["Payment", "paymentStatus"], ["Total", "total"],
+            ]} empty="No bookings are in the database yet." />
+          )}
+
+          {activePage === "users" && (
+            <DataTable title="Registered users" rows={users} columns={[
+              ["Name", "fullName"], ["Email", "email"], ["Role", "role"],
+              ["Status", "accountStatus"], ["Created", "createdAt"],
+            ]} empty="No user accounts are in the database yet." />
+          )}
+
+          {activePage === "airports" && (
+            <DataTable title="Airports" rows={airports} columns={[
+              ["Airport", "name"], ["City", "city"], ["Code", "code"], ["Country", "countryCode"],
+            ]} empty="No active airports are configured." />
+          )}
+
+          {activePage === "hotels" && (
+            <div className="bg-white border border-slate-200 rounded-2xl p-8 sm:p-12 text-center">
+              <Hotel size={30} className="mx-auto text-[#327D81]" />
+              <h2 className="text-2xl font-black mt-5">Hotels</h2>
+              <p className="text-slate-500 mt-2">Hotel management is unavailable because this project has no hotels table or hotel API.</p>
+            </div>
+          )}
+
+          {activePage === "overview" && flights.length === 0 && !loading && !error && (
+            <p className="mt-4 rounded-xl border border-dashed border-slate-300 bg-white p-6 text-center text-slate-500">No scheduled flights are currently in the database.</p>
+          )}
+
+          {activePage !== "overview" && activePage !== "flights" && activePage !== "bookings" && activePage !== "users" && activePage !== "airports" && activePage !== "hotels" && (
             <div className="bg-white border border-slate-200 rounded-2xl p-8 sm:p-12 text-center">
               {(() => {
                 const item = navigation.find((nav) => nav.id === activePage);
@@ -823,6 +872,28 @@ function Field({ label, icon: Icon, children }) {
       </span>
       {children}
     </label>
+  );
+}
+
+function DataTable({ title, rows, columns, empty }) {
+  const valueFor = (row, key) => {
+    if (key === "route") return [row.fromCode, row.toCode].filter(Boolean).join(" → ") || "—";
+    if (key === "total") return `${row.currency || "NPR"} ${Number(row.totalAmount || 0).toLocaleString()}`;
+    const value = row[key];
+    if (value == null || value === "") return "—";
+    if (key === "createdAt" || key === "travelDate") return new Date(value).toLocaleString();
+    return String(value);
+  };
+  return (
+    <section className="overflow-hidden rounded-2xl border border-slate-200 bg-white">
+      <div className="border-b border-slate-100 p-5"><h2 className="text-xl font-black">{title}</h2><p className="mt-1 text-sm text-slate-500">{rows.length} records</p></div>
+      {!rows.length ? <p className="p-10 text-center text-slate-500">{empty}</p> : (
+        <div className="overflow-x-auto"><table className="w-full text-left text-sm">
+          <thead className="bg-slate-50 text-xs uppercase text-slate-500"><tr>{columns.map(([label]) => <th className="px-5 py-3" key={label}>{label}</th>)}</tr></thead>
+          <tbody className="divide-y divide-slate-100">{rows.map((row, index) => <tr key={row.id || row.reference || row.email || index}>{columns.map(([, key]) => <td className="whitespace-nowrap px-5 py-3" key={key}>{valueFor(row, key)}</td>)}</tr>)}</tbody>
+        </table></div>
+      )}
+    </section>
   );
 }
 

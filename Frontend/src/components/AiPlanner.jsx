@@ -1,5 +1,4 @@
-import React from "react";
-import { Sparkles, ShieldAlert, CheckCircle } from "lucide-react";
+import { Sparkles, ShieldAlert } from "lucide-react";
 
 export default function AiPlanner({ formatPrice }) {
   return (

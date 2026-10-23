@@ -1,9 +1,9 @@
 import React, { useEffect, useMemo, useState } from "react";
 import {
-  Bus, Car, Zap, Leaf, Wifi, Snowflake, Mountain, MapPin, Star, Users, Clock,
+  Bus, Car, Zap, Leaf, Snowflake, Mountain, MapPin, Star, Clock,
   ArrowRightLeft, ArrowLeft, ArrowRight, CheckCircle2, Loader2, Printer,
   ShieldCheck, Tag, Wallet, CreditCard, CalendarDays, Sparkles, Gauge,
-  X, Timer, Smartphone, Lock, Download, Share2, AlertCircle, CalendarPlus, Ticket, History,
+  X, Timer, Smartphone, Lock, Share2, AlertCircle, CalendarPlus, Ticket, History,
 } from "lucide-react";
 
 /* ------------------------------------------------------------------
@@ -327,7 +327,6 @@ function QuickBook({ trips, from, to, setFrom, setTo, date, setDate, paxCount, s
   const [selId, setSelId] = useState("");
   const [seats, setSeats] = useState([]);
   const sel = sorted.find((t) => t.id === selId);
-  useEffect(() => { setSelId(""); setSeats([]); }, [from, to, paxCount]);
   useEffect(() => {
     const h = (e) => e.key === "Escape" && onClose();
     window.addEventListener("keydown", h); return () => window.removeEventListener("keydown", h);
@@ -406,14 +405,13 @@ function PaymentPanel({ total, cur, method, setMethod, paying, setPaying, charge
 
   useEffect(() => {
     if (phase !== "processing") return;
-    setStepIdx(0);
     const id = setInterval(() => setStepIdx((i) => Math.min(i + 1, 2)), 800);
     return () => clearInterval(id);
   }, [phase]);
 
   const pickMethod = (m) => { if (paying) return; setMethod(m); setPhase("form"); setErr(""); setOtp(""); };
   const run = async (extra) => {
-    setPaying(true); setPhase("processing"); setErr("");
+    setPaying(true); setStepIdx(0); setPhase("processing"); setErr("");
     try { const res = await charge({ method, ...extra }); setCard(blankCard); setOtp(""); onPaid(res); }
     catch (e) { setErr(e.message || "The payment did not go through."); setPhase("failed"); }
     finally { setPaying(false); }
@@ -569,7 +567,7 @@ export default function TripzoBusBooking() {
   const [error, setError] = useState("");
   const [quick, setQuick] = useState(false);
   const [holdEnd, setHoldEnd] = useState(0);
-  const [now, setNow] = useState(Date.now());
+  const [now, setNow] = useState(0);
   const [notice, setNotice] = useState("");
   const [toast, setToast] = useState("");
   const [bookings, setBookings] = useState(store.read);
@@ -579,12 +577,18 @@ export default function TripzoBusBooking() {
   const holding = step === "SEATS" || step === "PAY";
   useEffect(() => {
     if (!holding) return;
-    setNow(Date.now());
     const id = setInterval(() => setNow(Date.now()), 1000);
     return () => clearInterval(id);
   }, [holding]);
   useEffect(() => {
-    if (holding && holdEnd && holdLeft === 0 && !paying) { setNotice("Your seat hold ran out. Pick your seats again to continue."); go("RESULTS"); }
+    if (holding && holdEnd && holdLeft === 0 && !paying) {
+      const id = setTimeout(() => {
+        setNotice("Your seat hold ran out. Pick your seats again to continue.");
+        setStep("RESULTS");
+        window.scrollTo({ top: 0, behavior: "smooth" });
+      }, 0);
+      return () => clearTimeout(id);
+    }
   }, [holding, holdEnd, holdLeft, paying]);
   useEffect(() => { if (!toast) return; const id = setTimeout(() => setToast(""), 3500); return () => clearTimeout(id); }, [toast]);
   const routeTrips = useMemo(() => TRIPS.filter((t) => t.from === from && t.to === to), [from, to]);
@@ -936,7 +940,7 @@ export default function TripzoBusBooking() {
       )}
 
       {quick && (
-        <QuickBook trips={routeTrips} from={from} to={to} setFrom={setFrom} setTo={setTo} date={date} setDate={setDate}
+        <QuickBook key={`${from}-${to}-${date}-${paxCount}`} trips={routeTrips} from={from} to={to} setFrom={setFrom} setTo={setTo} date={date} setDate={setDate}
           paxCount={paxCount} setPaxCount={setPaxCount} cur={cur} onClose={() => setQuick(false)} onContinue={choose} />
       )}
       {toast && <p role="status" className="no-print fixed bottom-6 left-1/2 z-50 -translate-x-1/2 rounded-full bg-[#1B2430] px-5 py-3 text-sm font-bold text-white shadow-xl">{toast}</p>}

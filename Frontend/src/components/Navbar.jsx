@@ -1,4 +1,3 @@
-import React from "react";
 import { Plane, Bus, Car, Hotel, Sparkles, User } from "lucide-react";
 
 export default function Navbar({

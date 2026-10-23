@@ -1,4 +1,3 @@
-import React from "react";
 import { STAYS_DATA } from "../data/mockData";
 import { Hotel, Wifi, Flame, Star } from "lucide-react";
 
