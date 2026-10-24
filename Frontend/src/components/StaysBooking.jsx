@@ -1218,15 +1218,27 @@ export default function StaysBooking({ formatPrice }) {
     try {
       setLoading(true);
       setError("");
-
-      const response = await fetch(`${API_URL}/hotels`);
+      let homeSearch = null;
+      try { homeSearch = JSON.parse(sessionStorage.getItem("tripzoHomeSearch") || "null"); } catch { homeSearch = null; }
+      const params = new URLSearchParams();
+      if (homeSearch?.service === "hotels") {
+        if (homeSearch.city?.trim()) params.set("city", homeSearch.city.trim());
+        if (homeSearch.guests) params.set("guests", homeSearch.guests);
+      }
+      const response = await fetch(`${API_URL}/hotels${params.size ? `?${params.toString()}` : ""}`);
       const result = await response.json();
 
       if (!response.ok) {
         throw new Error(result.message || "Unable to load hotels.");
       }
 
-      setHotels(result.data || []);
+      const data = result.data || [];
+      setHotels(data);
+      if (homeSearch?.service === "hotels") {
+        setForm((current) => ({ ...current, checkIn: homeSearch.checkIn || current.checkIn, checkOut: homeSearch.checkOut || current.checkOut, guests: Number(homeSearch.guests) || current.guests, rooms: Number(homeSearch.rooms) || current.rooms }));
+        const selected = data.find((hotel) => String(hotel.id) === String(homeSearch.hotelId));
+        if (selected) { setSelectedHotel(selected); setSelectedRoom(null); setStep(1); }
+      }
     } catch (err) {
       setError(err?.message || "Unable to load hotels. Please try again.");
     } finally {

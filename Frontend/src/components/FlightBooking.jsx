@@ -121,6 +121,14 @@ const input =
 
 const STEPS = ["Flights", "Passengers", "Review", "Demo payment", "Confirmation"];
 
+function homeSearch(service) {
+  try {
+    const value = JSON.parse(sessionStorage.getItem("tripzoHomeSearch") || "null");
+    if (value?.service === service) return value;
+  } catch { /* Use the booking page's normal defaults. */ }
+  return {};
+}
+
 /* -------------------------------------------------------
    STEP INDICATOR
 ------------------------------------------------------- */
@@ -284,10 +292,10 @@ export default function TripzoFlightBooking() {
   const [airportsLoading, setAirportsLoading] = useState(true);
   const [airportsError, setAirportsError] = useState("");
 
-  const [from, setFrom] = useState("KTM");
-  const [to, setTo] = useState("DHI");
-  const [date, setDate] = useState(addDays(todayISO(), 7));
-  const [paxCount, setPaxCount] = useState(1);
+  const [from, setFrom] = useState(() => homeSearch("flights").from || "KTM");
+  const [to, setTo] = useState(() => homeSearch("flights").to || "DHI");
+  const [date, setDate] = useState(() => homeSearch("flights").date || addDays(todayISO(), 7));
+  const [paxCount, setPaxCount] = useState(() => Number(homeSearch("flights").passengers) || 1);
 
   const [routeFlights, setRouteFlights] = useState([]);
   const [providerFlights, setProviderFlights] = useState([]);

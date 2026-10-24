@@ -8,8 +8,11 @@ import StaysBooking from "./components/StaysBooking";
 import AiPlanner from "./components/AiPlanner";
 import AdminDashboard from "./pages/AdminDashboard";
 import CustomerAccount from "./components/CustomerAccount";
+import Home from "./components/Home";
+
+
 export default function App() {
-  const [activeTab, setActiveTab] = useState("flights");
+  const [activeTab, setActiveTab] = useState("home");
   const [currency, setCurrency] = useState("NPR");
 
 const formatPrice = (amount, fromCurrency = "NPR") => {
@@ -42,6 +45,7 @@ if (window.location.pathname.startsWith("/admin")) {
       />
 
       <main className="flex-1 max-w-7xl w-full mx-auto px-4 py-6">
+        {activeTab === "home" && <Home setActiveTab={setActiveTab} />}
         {activeTab === "flights" && (
           <FlightBooking currency={currency} formatPrice={formatPrice} />
         )}

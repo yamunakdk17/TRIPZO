@@ -52,6 +52,14 @@ const defaultPayment = {
   method: "cash",
 };
 
+function homeTaxiSearch() {
+  try {
+    const value = JSON.parse(sessionStorage.getItem("tripzoHomeSearch") || "null");
+    if (value?.service === "taxi") return value;
+  } catch { /* Use the taxi page's normal defaults. */ }
+  return {};
+}
+
 export default function AirportTaxi({ formatPrice }) {
   const [routes, setRoutes] = useState([]);
   const [selectedRoute, setSelectedRoute] = useState(null);
@@ -64,7 +72,10 @@ export default function AirportTaxi({ formatPrice }) {
   const [error, setError] = useState("");
   const [success, setSuccess] = useState("");
 
-  const [form, setForm] = useState(defaultForm);
+  const [form, setForm] = useState(() => {
+    const search = homeTaxiSearch();
+    return { ...defaultForm, pickupDate: search.date || "", pickupTime: search.time || "", passengers: Number(search.passengers) || 1 };
+  });
   const [payment, setPayment] = useState(defaultPayment);
 
   const [bookingData, setBookingData] = useState(null);
@@ -85,10 +96,13 @@ export default function AirportTaxi({ formatPrice }) {
       }
 
       const data = result.data || [];
-
       setRoutes(data);
-
-      setSelectedRoute((current) => current || data[0] || null);
+      const search = homeTaxiSearch();
+      const requested = data.find((route) =>
+        (!search.pickup || `${route.pickupLocation}`.toLowerCase().includes(search.pickup.toLowerCase()) || search.pickup.toLowerCase().includes(`${route.pickupLocation}`.toLowerCase())) &&
+        (!search.destination || `${route.destination}`.toLowerCase().includes(search.destination.toLowerCase()) || search.destination.toLowerCase().includes(`${route.destination}`.toLowerCase()))
+      );
+      setSelectedRoute((current) => requested || current || data[0] || null);
     } catch (err) {
       setError(err.message);
     } finally {

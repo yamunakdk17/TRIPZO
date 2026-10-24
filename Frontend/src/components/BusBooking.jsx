@@ -90,6 +90,13 @@ const co2 = (t) => Math.round((CLASSES[t.cls].co2 * t.km) / 100) / 10; // kg per
 const emptyPax = () => ({ name: "", phone: "", gender: "Male", seat: "" });
 const field = "w-full rounded-lg border-2 border-slate-200 bg-white p-3 text-sm outline-none focus:border-[#1B2430]";
 const STEPS = ["Search", "Choose", "Seats", "Pay", "Ticket"];
+function homeSearch() {
+  try {
+    const value = JSON.parse(sessionStorage.getItem("tripzoHomeSearch") || "null");
+    if (value?.service === "buses") return value;
+  } catch { /* Use the bus page's normal defaults. */ }
+  return {};
+}
 const HOLD_SECONDS = 10 * 60; // how long seats stay reserved while the person books
 const clock = (s) => `${String(Math.floor(s / 60)).padStart(2, "0")}:${String(s % 60).padStart(2, "0")}`;
 const boardBy = (dep) => { const m = (+dep.slice(0, 2) * 60 + +dep.slice(3) - 30 + 1440) % 1440; return `${String(Math.floor(m / 60)).padStart(2, "0")}:${String(m % 60).padStart(2, "0")}`; };
@@ -546,10 +553,10 @@ function Qr({ seed }) {
 export default function TripzoBusBooking() {
   const [cur, setCur] = useState("NPR");
   const [step, setStep] = useState("SEARCH");
-  const [from, setFrom] = useState("KTM");
-  const [to, setTo] = useState("PKR");
-  const [date, setDate] = useState(addDays(todayISO(), 3));
-  const [paxCount, setPaxCount] = useState(1);
+  const [from, setFrom] = useState(() => homeSearch().from || "KTM");
+  const [to, setTo] = useState(() => homeSearch().to || "PKR");
+  const [date, setDate] = useState(() => homeSearch().date || addDays(todayISO(), 3));
+  const [paxCount, setPaxCount] = useState(() => Number(homeSearch().passengers) || 1);
   const [classes, setClasses] = useState([]);
   const [sort, setSort] = useState("price");
   const [period, setPeriod] = useState("Any");

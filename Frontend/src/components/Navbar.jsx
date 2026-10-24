@@ -1,4 +1,4 @@
-import { Plane, Bus, Car, Hotel, Sparkles, User } from "lucide-react";
+import { Plane, Bus, Car, Hotel, Sparkles, User, House } from "lucide-react";
 
 export default function Navbar({
   activeTab,
@@ -7,6 +7,7 @@ export default function Navbar({
   setCurrency,
 }) {
   const navs = [
+    { id: "home", label: "Home", icon: House },
     { id: "flights", label: "Flights", icon: Plane },
     { id: "buses", label: "Buses & Jeeps", icon: Bus },
     { id: "taxi", label: "Airport Taxi", icon: Car },
@@ -19,7 +20,11 @@ export default function Navbar({
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 h-16 flex items-center justify-between">
         {/* LOGO */}
         <div
-          onClick={() => setActiveTab("flights")}
+          onClick={() => setActiveTab("home")}
+          onKeyDown={(event) => { if (event.key === "Enter" || event.key === " ") setActiveTab("home"); }}
+          role="button"
+          tabIndex={0}
+          aria-label="Tripzo home"
           className="flex items-center gap-3 cursor-pointer group"
         >
           <div className="bg-[#327D81] group-hover:bg-[#286467] transition-all p-2 rounded-xl text-white font-bold shadow-sm">
