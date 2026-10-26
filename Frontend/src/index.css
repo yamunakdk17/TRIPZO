@@ -1,4 +1,9 @@
- @import "tailwindcss";
+@import url('https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700;800&display=swap');
+@import "tailwindcss";
+
+:root {
+  --font-family: "Manrope", sans-serif;
+}
 
 /* Theme: Tripzo brand colors and fonts */
 @theme {
@@ -12,8 +17,21 @@
   --color-muted: #6b7686;
   --color-line: #dde5f0;
 
-  --font-sans: "Manrope", system-ui, sans-serif;
-  --font-display: "Plus Jakarta Sans", "Manrope", sans-serif;
+  --font-sans: var(--font-family);
+  --font-display: var(--font-family);
+  --font-heading: var(--font-family);
+}
+
+html,
+body,
+#root {
+  font-family: var(--font-family);
+}
+
+*,
+*::before,
+*::after {
+  font-family: inherit;
 }
 
 /* Global defaults */
@@ -36,8 +54,10 @@
   h1,
   h2,
   h3,
-  .font-display {
-    font-family: var(--font-display);
+  h4,
+  h5,
+  h6 {
+    font-family: var(--font-family);
   }
 
   button,
@@ -45,6 +65,16 @@
   select,
   textarea {
     font: inherit;
+  }
+
+  p,
+  span,
+  a,
+  label,
+  li,
+  td,
+  th {
+    font-family: inherit;
   }
 
   button:disabled {
@@ -79,4 +109,3 @@
     transition-duration: 0.01ms !important;
   }
 }
-

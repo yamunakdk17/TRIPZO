@@ -664,10 +664,8 @@ export default function TripzoBusBooking() {
   const toggleClass = (c) => setClasses((s) => (s.includes(c) ? s.filter((x) => x !== c) : [...s, c]));
 
   return (
-    <div className="min-h-screen bg-[#F3F5F7] text-[#1B2430]" style={{ fontFamily: "'Instrument Sans', system-ui, sans-serif" }}>
-      <style>{`@import url('https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:wght@600;800&family=Instrument+Sans:wght@400;600;700&display=swap');
-        .font-heading{font-family:'Bricolage Grotesque',system-ui,sans-serif}
-        .tz-road{animation:tz-road 1s linear infinite}
+    <div className="min-h-screen bg-[#F3F5F7] text-[#1B2430]">
+      <style>{`.tz-road{animation:tz-road 1s linear infinite}
         @keyframes tz-road{to{stroke-dashoffset:50}}
         .tz-bus{animation:tz-bob 2.4s ease-in-out infinite}
         @keyframes tz-bob{50%{transform:translateY(-3px)}}
