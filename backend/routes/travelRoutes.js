@@ -8,6 +8,7 @@ import {
   getHotelAvailability,
   createHotelReservation,
   getTaxiRoutes,
+  getTaxiRouteBySlug,
   createTaxiBooking,
   getHotelReservation,
   cancelHotelReservation,
@@ -41,6 +42,7 @@ router.put("/hotels/reservations/:reference/cancel", cancelHotelReservation);
 */
 
 router.get("/taxis/routes", getTaxiRoutes);
+router.get("/taxis/routes/:slug", getTaxiRouteBySlug);
 
 router.post("/taxis/bookings", optionalCustomer, createTaxiBooking);
 router.get("/taxis/bookings/:reference", getTaxiBooking);

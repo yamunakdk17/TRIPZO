@@ -3,6 +3,7 @@ import { hashPassword, verifyPassword } from "../utils/password.js";
 import User from "../models/User.js";
 import Admin from "../models/Admin.js";
 import HttpError from "../utils/HttpError.js";
+import createSlug, { buildUniqueSlug } from "../utils/createSlug.js";
 import AdminManagement, { intId } from "../models/AdminManagement.js";
 import pool from "../db.js";
 const loginAttempts = new Map();
@@ -109,6 +110,7 @@ export async function adminHotels(req, res, next) {
       SELECT
         h.id,
         h.name,
+        h.slug,
         h.description,
         h.address,
         h.city,
@@ -174,11 +176,16 @@ export async function createAdminHotel(req, res, next) {
       throw new HttpError(400, "Hotel city is required.");
     }
 
+    const hotelName = String(name).trim();
+    const [existingRows] = await pool.execute("SELECT slug FROM hotels WHERE slug IS NOT NULL");
+    const slug = buildUniqueSlug(createSlug(hotelName) || "hotel", existingRows.map((row) => row.slug));
+
     const [result] = await pool.execute(
       `
       INSERT INTO hotels
       (
         name,
+        slug,
         description,
         address,
         city,
@@ -190,10 +197,11 @@ export async function createAdminHotel(req, res, next) {
         shower,
         status
       )
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'active')
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'active')
       `,
       [
-        String(name).trim(),
+        hotelName,
+        slug,
         String(description || "").trim(),
         String(address || "").trim(),
         String(city).trim(),
@@ -239,11 +247,18 @@ export async function updateAdminHotel(req, res, next) {
       status,
     } = req.body || {};
 
+    const [currentRows] = await pool.execute("SELECT slug FROM hotels WHERE id = ? LIMIT 1", [id]);
+    const currentSlug = currentRows[0]?.slug || null;
+    const [existingRows] = await pool.execute("SELECT slug FROM hotels WHERE id != ? AND slug IS NOT NULL", [id]);
+
+    const nextSlug = currentSlug || buildUniqueSlug(createSlug(String(name || "").trim()) || "hotel", existingRows.map((row) => row.slug));
+
     const [result] = await pool.execute(
       `
       UPDATE hotels
       SET
         name = ?,
+        slug = ?,
         description = ?,
         address = ?,
         city = ?,
@@ -258,6 +273,7 @@ export async function updateAdminHotel(req, res, next) {
       `,
       [
         String(name || "").trim(),
+        nextSlug,
         String(description || "").trim(),
         String(address || "").trim(),
         String(city || "").trim(),
@@ -426,6 +442,7 @@ export async function adminTaxiRoutes(req, res, next) {
     const [rows] = await pool.execute(`
       SELECT
         id,
+        slug,
         pickup_location AS pickupLocation,
         destination,
         description,
@@ -475,6 +492,8 @@ function validateTaxiRouteInput(body = {}) {
 export async function createAdminTaxiRoute(req, res, next) {
   try {
     const { pickupLocation, destination, description, fare, currency, estimatedMinutes, estimatedDistanceKm, maxPassengers, vehicleType } = validateTaxiRouteInput(req.body);
+    const [existingRows] = await pool.execute("SELECT slug FROM taxi_routes WHERE slug IS NOT NULL");
+    const slug = buildUniqueSlug(createSlug(`${pickupLocation} to ${destination}`) || "taxi-route", existingRows.map((row) => row.slug));
 
     const [result] = await pool.execute(
       `
@@ -482,6 +501,7 @@ export async function createAdminTaxiRoute(req, res, next) {
       (
         pickup_location,
         destination,
+        slug,
         description,
         fare,
         currency,
@@ -491,10 +511,10 @@ export async function createAdminTaxiRoute(req, res, next) {
         vehicle_type,
         status
       )
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'active')
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'active')
       `,
       [
-        pickupLocation, destination, description, fare, currency,
+        pickupLocation, destination, slug, description, fare, currency,
         estimatedMinutes, estimatedDistanceKm, maxPassengers, vehicleType,
       ],
     );
@@ -519,6 +539,10 @@ export async function updateAdminTaxiRoute(req, res, next) {
     }
 
     const { pickupLocation, destination, description, fare, currency, estimatedMinutes, estimatedDistanceKm, maxPassengers, vehicleType, status } = validateTaxiRouteInput(req.body);
+    const [currentRows] = await pool.execute("SELECT slug FROM taxi_routes WHERE id = ? LIMIT 1", [id]);
+    const currentSlug = currentRows[0]?.slug || null;
+    const [existingRows] = await pool.execute("SELECT slug FROM taxi_routes WHERE id != ? AND slug IS NOT NULL", [id]);
+    const nextSlug = currentSlug || buildUniqueSlug(createSlug(`${pickupLocation} to ${destination}`) || "taxi-route", existingRows.map((row) => row.slug));
 
     const [result] = await pool.execute(
       `
@@ -526,6 +550,7 @@ export async function updateAdminTaxiRoute(req, res, next) {
       SET
         pickup_location = ?,
         destination = ?,
+        slug = ?,
         description = ?,
         fare = ?,
         currency = ?,
@@ -537,7 +562,7 @@ export async function updateAdminTaxiRoute(req, res, next) {
       WHERE id = ?
       `,
       [
-        pickupLocation, destination, description, fare, currency,
+        pickupLocation, destination, nextSlug, description, fare, currency,
         estimatedMinutes, estimatedDistanceKm, maxPassengers, vehicleType, status,
         id,
       ],

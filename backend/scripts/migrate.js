@@ -58,6 +58,35 @@ async function addColumn(tableName, columnName, definition) {
   }
 }
 
+function toSlugValue(value) {
+  return String(value ?? '')
+    .normalize('NFKD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .toLowerCase()
+    .trim()
+    .replace(/[^a-z0-9\s-]/g, '')
+    .replace(/\s+/g, '-')
+    .replace(/-+/g, '-')
+    .replace(/^-+|-+$/g, '');
+}
+
+async function populateExistingSlugs(tableName, labelColumn, modelName) {
+  const [rows] = await pool.execute(`SELECT id, ${labelColumn} AS label FROM ${tableName} WHERE slug IS NULL OR slug = '' ORDER BY id`);
+  for (const row of rows) {
+    const baseSlug = toSlugValue(row.label) || modelName;
+    const [existing] = await pool.execute(`SELECT slug FROM ${tableName} WHERE (slug = ? OR slug LIKE ?) AND id != ? LIMIT 20`, [baseSlug, `${baseSlug}-%`, row.id]);
+    let slug = baseSlug;
+    if (existing.some((item) => item.slug === slug)) {
+      let suffix = 2;
+      while (existing.some((item) => item.slug === `${baseSlug}-${suffix}`)) {
+        suffix += 1;
+      }
+      slug = `${baseSlug}-${suffix}`;
+    }
+    await pool.execute(`UPDATE ${tableName} SET slug = ? WHERE id = ?`, [slug, row.id]);
+  }
+}
+
 async function migrate() {
   await pool.query(`CREATE TABLE IF NOT EXISTS schema_migrations (
     version VARCHAR(120) NOT NULL PRIMARY KEY,
@@ -120,8 +149,13 @@ async function migrate() {
     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci`);
   }
   await addColumn("hotels", "rating", "DECIMAL(2,1) NULL");
+  await addColumn("hotels", "slug", "VARCHAR(180) NULL");
   await addColumn("hotels", "wifi", "VARCHAR(100) NULL");
   await addColumn("hotels", "shower", "VARCHAR(100) NULL");
+  if (!(await indexExists("hotels", "uq_hotels_slug"))) {
+    await pool.query("ALTER TABLE hotels ADD UNIQUE KEY uq_hotels_slug (slug)");
+  }
+  await populateExistingSlugs("hotels", "name", "hotel");
   if (!(await tableExists("hotel_amenities"))) {
     await pool.query(`CREATE TABLE hotel_amenities (
       id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT, hotel_id BIGINT UNSIGNED NOT NULL,
@@ -237,8 +271,13 @@ async function migrate() {
       CONSTRAINT chk_taxi_route_fare CHECK (fare >= 0)
     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci`);
   }
+  await addColumn("taxi_routes", "slug", "VARCHAR(180) NULL");
   await addColumn("taxi_routes", "estimated_distance_km", "DECIMAL(8,2) NULL");
   await addColumn("taxi_routes", "max_passengers", "TINYINT UNSIGNED NOT NULL DEFAULT 4");
+  if (!(await indexExists("taxi_routes", "uq_taxi_routes_slug"))) {
+    await pool.query("ALTER TABLE taxi_routes ADD UNIQUE KEY uq_taxi_routes_slug (slug)");
+  }
+  await populateExistingSlugs("taxi_routes", "CONCAT(pickup_location, ' to ', destination)", "taxi-route");
   if (!(await tableExists("taxi_bookings"))) {
     await pool.query(`CREATE TABLE taxi_bookings (
       id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,

@@ -68,6 +68,7 @@ export async function getHotels(req, res, next) {
       SELECT
         h.id,
         h.name,
+        h.slug,
         h.description,
         h.address,
         h.city,
@@ -102,6 +103,7 @@ export async function getHotels(req, res, next) {
       GROUP BY
         h.id,
         h.name,
+        h.slug,
         h.description,
         h.address,
         h.city,
@@ -242,17 +244,15 @@ export async function getHotels(req, res, next) {
  */
 export async function getHotelById(req, res, next) {
   try {
-    const hotelId = Number(req.params.hotelId);
-
-    if (!hotelId) {
-      throw new HttpError(400, "Invalid hotel ID.");
-    }
+    const hotelParam = String(req.params.hotelId || "").trim();
+    const hotelId = Number(hotelParam);
 
     const [rows] = await pool.execute(
       `
       SELECT
         id,
         name,
+        slug,
         description,
         address,
         city,
@@ -263,11 +263,14 @@ export async function getHotelById(req, res, next) {
         latitude,
         longitude
       FROM hotels
-      WHERE id = ?
+      WHERE (
+        (? !== '' AND ? > 0 AND id = ?)
+        OR (? !== '' AND slug = ?)
+      )
         AND status = 'active'
       LIMIT 1
       `,
-      [hotelId],
+      [hotelParam, hotelParam, hotelId, hotelParam, hotelParam],
     );
 
     if (!rows.length) {
@@ -592,7 +595,7 @@ export async function createHotelReservation(req, res, next) {
 export async function getTaxiRoutes(req, res, next) {
   try {
     const [rows] = await pool.execute(
-      `SELECT id, pickup_location AS pickupLocation, destination, description,
+      `SELECT id, slug, pickup_location AS pickupLocation, destination, description,
               fare, currency, estimated_minutes AS estimatedMinutes,
               estimated_distance_km AS estimatedDistanceKm, max_passengers AS maxPassengers,
               vehicle_type AS vehicleType
@@ -603,6 +606,34 @@ export async function getTaxiRoutes(req, res, next) {
       estimatedDistanceKm: row.estimatedDistanceKm == null ? null : Number(row.estimatedDistanceKm),
     })) });
   } catch (error) { next(error); }
+}
+
+export async function getTaxiRouteBySlug(req, res, next) {
+  try {
+    const slug = String(req.params.slug || "").trim();
+    if (!slug) throw new HttpError(400, "Invalid taxi route slug.");
+
+    const [rows] = await pool.execute(
+      `SELECT id, slug, pickup_location AS pickupLocation, destination, description,
+              fare, currency, estimated_minutes AS estimatedMinutes,
+              estimated_distance_km AS estimatedDistanceKm, max_passengers AS maxPassengers,
+              vehicle_type AS vehicleType
+       FROM taxi_routes WHERE status = 'active' AND slug = ? LIMIT 1`,
+      [slug],
+    );
+
+    if (!rows.length) throw new HttpError(404, "Taxi route not found.");
+
+    const route = rows[0];
+    route.fare = Number(route.fare);
+    route.estimatedMinutes = Number(route.estimatedMinutes);
+    route.estimatedDistanceKm = route.estimatedDistanceKm == null ? null : Number(route.estimatedDistanceKm);
+    route.maxPassengers = Number(route.maxPassengers);
+
+    res.json({ success: true, data: route });
+  } catch (error) {
+    next(error);
+  }
 }
 
 export async function getHotelReservation(req, res, next) {

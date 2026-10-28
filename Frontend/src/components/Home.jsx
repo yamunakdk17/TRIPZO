@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useState } from "react";
+import { useNavigate } from "react-router-dom";
 import {
   ArrowRight,
   Backpack,
@@ -15,6 +16,7 @@ import {
   Sparkles,
   Wallet,
 } from "lucide-react";
+import api from "../utils/api";
 
 const API_URL = (
   import.meta.env.VITE_API_URL || "http://localhost:5000/api"
@@ -178,6 +180,7 @@ function Price({ value, currency = "NPR" }) {
 }
 
 export default function Home({ setActiveTab }) {
+  const navigate = useNavigate();
   const [bookingTab, setBookingTab] = useState("flights");
   const [search, setSearch] = useState({
     from: "KTM",
@@ -209,36 +212,55 @@ export default function Home({ setActiveTab }) {
   const [bookingError, setBookingError] = useState("");
 
   const go = (tab) => {
+    const routes = {
+      home: "/",
+      flights: "/flights",
+      buses: "/buses",
+      taxi: "/taxi",
+      stays: "/stays",
+      planner: "/planner",
+      account: "/account",
+    };
+
     setActiveTab(tab);
+    navigate(routes[tab] || "/");
     window.scrollTo({ top: 0, behavior: "smooth" });
   };
+
   const openHotel = (hotel) => {
     try {
       sessionStorage.setItem(
         "tripzoHomeSearch",
-        JSON.stringify({ service: "hotels", hotelId: hotel.id }),
+        JSON.stringify({ service: "hotels", hotelId: hotel.id, slug: hotel.slug || null }),
       );
     } catch {
       /* Navigation still works without session storage. */
     }
-    go("stays");
+
+    navigate(`/hotels/${encodeURIComponent(hotel.slug || hotel.id)}`);
+    setActiveTab("stays");
   };
+
+  const openTaxi = (route) => {
+    try {
+      sessionStorage.setItem(
+        "tripzoHomeSearch",
+        JSON.stringify({ service: "taxi", taxiId: route.id, slug: route.slug || null }),
+      );
+    } catch {
+      /* Navigation still works without session storage. */
+    }
+
+    navigate(`/taxi/${encodeURIComponent(route.slug || route.id)}`);
+    setActiveTab("taxi");
+  };
+
   const loadFeatured = useCallback(async () => {
     setLoading(true);
     setLoadError("");
     const results = await Promise.allSettled([
-      fetch(`${API_URL}/hotels`).then(async (response) => {
-        const result = await response.json();
-        if (!response.ok)
-          throw new Error(result.message || "Unable to load hotels.");
-        return result.data || [];
-      }),
-      fetch(`${API_URL}/taxis/routes`).then(async (response) => {
-        const result = await response.json();
-        if (!response.ok)
-          throw new Error(result.message || "Unable to load taxi routes.");
-        return result.data || [];
-      }),
+      api.get("/hotels").then((response) => response.data?.data || []),
+      api.get("/taxis/routes").then((response) => response.data?.data || []),
     ]);
     if (results[0].status === "fulfilled")
       setHotels(results[0].value.slice(0, 4));
@@ -740,7 +762,7 @@ export default function Home({ setActiveTab }) {
                     </strong>
                   </p>
                   <button
-                    onClick={() => go("taxi")}
+                    onClick={() => openTaxi(route)}
                     className="mt-4 w-full rounded-xl border border-[#327D81]/30 px-4 py-2.5 text-sm font-bold text-[#327D81] hover:bg-[#EAF4F2]"
                   >
                     View route & book
